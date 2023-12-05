@@ -1,0 +1,7 @@
+(
+    (defmod hello-world (
+        (defun hello-world () (
+            println "hello world!"
+        ))
+    ))
+)
