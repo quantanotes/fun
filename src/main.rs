@@ -1,4 +1,4 @@
-use lisp::repl::repl;
+use fun::repl::repl;
 
 fn main() {
     repl(false)

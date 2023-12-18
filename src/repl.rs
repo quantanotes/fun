@@ -3,15 +3,15 @@ use std::{
     io::{self, Write},
 };
 
-use crate::{env::Env, eval::eval, parser::parse};
+use crate::{env::Env, eval::eval, parser::parse_many};
 
 pub fn repl(verbose: bool) {
-    println!("funlisp repl");
+    println!("have fun!");
 
     let mut env = Env::default();
 
     loop {
-        print!("funlisp> ");
+        print!("fun> ");
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
@@ -20,11 +20,11 @@ pub fn repl(verbose: bool) {
         let input = input.trim();
 
         if input.to_lowercase() == "exit" {
-            println!("the fun is over");
+            println!("goodbye!");
             break;
         }
 
-        match parse(input) {
+        match parse_many(input) {
             Ok((rest, expr)) => {
                 if verbose {
                     println!("parser out: {:?}", expr);
@@ -34,7 +34,11 @@ pub fn repl(verbose: bool) {
                 }
 
                 match eval(env.borrow_mut(), expr) {
-                    Ok(result) => println!("{}", result),
+                    Ok(result) => {
+                        if verbose {
+                            println!("{}", result)
+                        }
+                    }
                     Err(err) => eprintln!("eval error: {}", err),
                 }
             }

@@ -1,11 +1,11 @@
-use crate::{eval::eval, expr::Expr, ext::*, parser::parse};
+use crate::{eval::eval, expr::Expr, ext::*, parser::parse_many};
 use std::{cell::RefCell, collections::HashMap, fs, rc::Rc};
 
 #[derive(Clone)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
     objects: HashMap<String, Expr>,
-    modules: Rc<RefCell<HashMap<String, Env>>>,
+    modules: HashMap<String, Env>,
 }
 
 impl Env {
@@ -13,7 +13,7 @@ impl Env {
         Env {
             parent: None,
             objects: HashMap::new(),
-            modules: Rc::new(RefCell::new(HashMap::new())),
+            modules: HashMap::new(),
         }
     }
 
@@ -26,11 +26,11 @@ impl Env {
     }
 
     pub fn get(&self, key: &str) -> Option<Expr> {
-        if key.contains('.') {
-            let mut parts = key.split('.');
+        if key.contains("::") {
+            let mut parts = key.split("::");
             if let Some(first) = parts.next() {
-                let rest: String = parts.collect::<Vec<&str>>().join(".");
-                return self.modules.borrow_mut().get(first)?.get(&rest);
+                let rest: String = parts.collect::<Vec<&str>>().join("::");
+                return self.modules.get(first)?.get(&rest);
             }
         }
 
@@ -53,25 +53,20 @@ impl Env {
 
         eval(&mut env, value).unwrap();
 
-        self.modules.borrow_mut().insert(key.to_string(), env);
+        self.modules.insert(key.to_string(), env);
     }
 
-    pub fn use_(&self, key: &str) -> Result<(), String> {
-        let parts: Vec<&str> = key.split('.').collect();
-        let path = parts[..parts.len() - 1].join("/");
+    pub fn use_(&mut self, key: &str) -> Result<(), String> {
+        let parts: Vec<&str> = key.split("::").collect();
+        let path = parts.join("/") + ".lisp";
         let name = parts.last().unwrap();
         let raw = fs::read_to_string(path).unwrap();
-
         let mut env = Env::default();
 
-        eval(&mut env, parse(&raw).unwrap().1).unwrap();
+        eval(&mut env, parse_many(&raw).unwrap().1).unwrap();
 
-        if let Some(module) = env.modules.borrow().get(*name) {
-            self.modules
-                .borrow_mut()
-                .insert(name.to_string(), module.clone());
-        }
-
+        self.modules.insert(name.to_string(), env);
+        
         Ok(())
     }
 }
@@ -116,7 +111,7 @@ impl Default for Env {
 
         env.put("def", Expr::ExtMacro(ExtMacro(ext_def)));
         env.put("defun", Expr::ExtMacro(ExtMacro(ext_defun)));
-        env.put("demacro", Expr::ExtMacro(ExtMacro(ext_defmacro)));
+        env.put("defmacro", Expr::ExtMacro(ExtMacro(ext_defmacro)));
         env.put("defmod", Expr::ExtMacro(ExtMacro(ext_defmod)));
 
         env.put("use", Expr::ExtMacro(ExtMacro(ext_use)));

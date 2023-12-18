@@ -14,6 +14,14 @@ pub fn parse(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     preceded(multispace0, alt((parse_atom, parse_list, parse_quote)))(i)
 }
 
+pub fn parse_many(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    map(many0(parse), |exprs| match exprs.len() {
+        0 => Expr::Void,
+        1 => exprs.first().unwrap().to_owned(),
+        _ => Expr::List(exprs),
+    })(i)
+}
+
 fn sexpr<'a, O1, F>(inner: F) -> impl Parser<&'a str, O1, VerboseError<&'a str>>
 where
     F: Parser<&'a str, O1, VerboseError<&'a str>>,
@@ -23,10 +31,6 @@ where
         preceded(multispace0, inner),
         context("close paren", cut(preceded(multispace0, char(')')))),
     )
-}
-
-fn is_symbol_char(c: char) -> bool {
-    c.is_alphabetic() || "+-*/=!<>?.".contains(c)
 }
 
 fn parse_symbol(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
@@ -78,6 +82,10 @@ fn parse_list(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
 
 fn parse_quote(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     map(preceded(char('\''), parse), |e| Expr::Quote(Box::new(e)))(i)
+}
+
+fn is_symbol_char(c: char) -> bool {
+    c.is_alphabetic() || "+-*/=!<>?.:".contains(c)
 }
 
 #[cfg(test)]
