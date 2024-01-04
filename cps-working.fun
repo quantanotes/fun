@@ -35,9 +35,7 @@
             (a    (cadr exp))
             ($rv  (gensym))
             (cont `(fun (,$rv) ,(k $rv))))
-            (tk f (fun ($f)
-                (tk a (fun ($a)
-                    `(,$f ,$e ,cont)))))))
+            ()))
 
     (defun t*k (exps k)
         (cond
@@ -48,3 +46,8 @@
                         (k (cons head tail)))))))))
 
     (defun cps (exp) (tc exp 'halt))
+
+
+    tk f (fun ($f)
+                (tk x (fun ($x)
+                    `(,$f ,$x ,c))))

@@ -10,33 +10,56 @@
 
     (defun m (exp)
         (cond
-            (aexp? exp)
-            (app?  (m-fun exp))
+            (atom? exp)
+            (fun?  (m-fun exp))
             (true  'm-error)))
     
     (defun m-fun (exp)
         (let
-            ((x (cadr exp))
+            ((x (cdr exp))
             (e  (caddr exp))
             ($k (gensym)))
-            `(fun ,(x, ,$k) ,(t e $k))))
+            `(fun (@x ,$k) ,(tc e $k))))
 
-    (defun t (exp k)
+    (defun tc (exp c)
         (cond
-            ((aexp? exp) `(,k ,(m exp)))
-            ((app? exp)  (t-app exp))
-            (true        't-error)))
+            ((aexp? exp) `(,c ,(m exp)))
+            ((app? exp)  (tc-app exp))
+            (true        'tc-error)))
 
-    (defun t-app (exp k)
+    (defun tc-app (exp c)
         (let
             ((f (car exp))
-            (x  (cadr exp))
+            (x  (cdr exp))
             ($f (gensym))
             ($x (gensym)))
-            (t f `(fun (,$f)
-                ,(t x `(fun (,$x)
-                    (,$f ,$x ,k)))))))
+            (tk f (fun ($f)
+                (t*k x (fun ($x)
+                    `(,$f @$x ,c)))))))
 
-    (defun cps (exp) (t exp 'halt))
+    (defun tk (exp k)
+        (cond
+            ((aexp? exp) (k (m exp)))
+            ((app? exp)  (tk-app exp))
+            (true        'tk-error)))
 
+    (defun tk-app (exp k)
+        (let*
+            (($r gensym)
+            (c `(fun (,$r) ,(k $r))))
+            (tc exp c)))
+
+    (defun t*k (exps k)
+        (println 'exps: exps)
+        (println 'k: k)
+        (println 'k-app: (k '()))
+        (println 'nil?: (nil? exps))
+        (cond
+            ((nil? exps)  (k '()))
+            ((pair? exps) (tk (car exps) (fun (hd)
+                (t*k (cdr exps) (fun (tl) (k (cons hd tl)))))))
+            (true         (k '()))))
+
+    (defun cps (exp) (tc exp 'halt))
+    
     (cps '(f g)))

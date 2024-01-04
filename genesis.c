@@ -164,7 +164,9 @@ static word_t evict(word_t x);
 
 static word_t cons(word_t car, word_t cdr);
 static word_t append(word_t x, word_t y);
-static word_t intern(const char* symbol);
+static word_t intern(const char* s);
+static word_t closure(word_t args, word_t body, int macro);
+static word_t quote(word_t x);
 static void   extend();
 static void   unwind();
 static void   bind(word_t symbol, word_t value);
@@ -175,6 +177,7 @@ static word_t evlis(word_t x);
 static word_t apply(word_t x, word_t y);
 static word_t begin(word_t x);
 static word_t quasi(word_t x);
+static word_t capture(word_t x);
 
 static char  buffer[BUFFER_SIZE];
 static char* bp;
@@ -286,6 +289,11 @@ static word_t evict(word_t x) {
             *car        = check_evict(*car);
             *cdr        = check_evict(*cdr);
             break;
+        case CLOSURE_TYPE:
+            closure_t* closure = (closure_t*)ptr;
+            closure->args      = check_evict(closure->args);
+            closure->body      = check_evict(closure->body);
+            break;
     }
 
     word_t* new_ptr = AS_OBJECT(heap_alloc(size));
@@ -337,6 +345,11 @@ static word_t forward(word_t x) {
         case PAIR_TYPE:
             CAR(ptr) = forward((CAR(ptr)));
             CDR(ptr) = forward((CDR(ptr)));
+        case CLOSURE_TYPE:
+            word_t* args = &((closure_t*)ptr)->args;
+            word_t* body = &((closure_t*)ptr)->body;
+            *args        = forward(*args);
+            *body        = forward(*body);
             break;
     }
 
@@ -394,9 +407,13 @@ static word_t closure(word_t args, word_t body, int macro) {
     closure_t* closure = (closure_t*)alloc(sizeof(closure_t));
     closure->header    = MAKE_OBJECT_HEADER(0, CLOSURE_TYPE, sizeof(closure_t));
     closure->args      = args;
-    closure->body      = body;
+    closure->body      = capture(body);
 
     return MAKE_OBJECT(closure);
+}
+
+static word_t quote(word_t x) {
+    return cons(intern("quote"), cons(x, NIL));
 }
 
 static void extend() {
@@ -443,7 +460,6 @@ static word_t lookup(word_t symbol) {
         }
     }
 
-    error("unbound symbol %s", AS_SYMBOL(symbol));
     return VOID;
 }
 
@@ -453,7 +469,11 @@ static word_t eval(word_t x) {
     if (IS_PAIR(x)) {
         return apply(eval(CAR(x)), CDR(x));
     } else if (IS_SYMBOL(x)) {
-        return lookup(x);
+        const word_t val = lookup(x);
+        if (val == VOID) {
+            error("unbound symbol %s", AS_SYMBOL(x));
+        }
+        return val;
     } else {
         return x;
     }
@@ -515,6 +535,23 @@ static word_t quasi(word_t x) {
         } else {
             return cons(quasi(CAR(x)), quasi(CDR(x)));
         }
+    }
+}
+
+/* Substitutes free variable pointers in to closures for environment capturing.
+ * The gc handles the rest.
+ */
+static word_t capture(word_t x) {
+    if (IS_PAIR(x)) {
+        return cons(capture(CAR(x)), capture(CDR(x)));
+    } else if (IS_SYMBOL(x)) {
+        const word_t val = lookup(x);
+        if (val == VOID) {
+            return x;   
+        }
+        return quote(val);
+    } else {
+        return x;
     }
 }
 
@@ -762,7 +799,7 @@ static word_t primitive_eq(word_t x) {
 }
 
 static word_t primitive_is_nil(word_t x) {
-    return MAKE_BOOLEAN(x == NIL);
+    return MAKE_BOOLEAN(eval(CAR(x)) == NIL);
 }
 
 static word_t primitive_is_atom(word_t x) {
@@ -827,8 +864,8 @@ static word_t primitive_let(word_t x) {
     word_t vals = NIL;
     EACH_CONS(bindings, CAR(x)) {
         const word_t binding = CAR(bindings);
-        const word_t val = eval(CADR(binding));
-        CDR(binding) = cons(val, NIL);
+        const word_t val     = eval(CADR(binding));
+        CDR(binding)         = cons(val, NIL);
     }
 
     extend();
@@ -910,6 +947,21 @@ static word_t primitive_append(word_t x) {
     return y;
 }
 
+static word_t primitive_length(word_t x) {
+    x          = eval(CAR(x));
+    uint64_t y = 0;
+    TAKE_CONS(x) {
+        y++;
+    }
+    return MAKE_INTEGER(y);
+}
+
+static word_t primitive_println(word_t x) {
+    print(evlis(x));
+    putchar('\n');
+    return VOID;
+}
+
 int           gensym_counter = 0;
 static word_t primitive_gensym(word_t x) {
     char sym[20];
@@ -962,6 +1014,8 @@ static const struct {
     PRIM(defmacro),
     PRIM(list),
     PRIM(append),
+    PRIM(length),
+    PRIM(println),
     PRIM(gensym),
     {0},
 };
