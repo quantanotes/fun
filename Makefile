@@ -1,5 +1,5 @@
 CC = gcc -std=c2x
-CFLAGS = -Wall -Wextra -Wno-ignored-attributes -Iinclude
+CFLAGS = -Wall -Wextra -Wno-ignored-attributes -Iinclude -O2
 LDFLAGS = -Llib
 SRC_DIR = .
 BIN_DIR = bin

@@ -408,6 +408,7 @@ static word_t closure(word_t args, word_t body, int macro) {
     closure->header    = MAKE_OBJECT_HEADER(0, CLOSURE_TYPE, sizeof(closure_t));
     closure->args      = args;
     closure->body      = capture(body);
+    closure->macro     = macro;
 
     return MAKE_OBJECT(closure);
 }
@@ -470,7 +471,7 @@ static word_t eval(word_t x) {
         return apply(eval(CAR(x)), CDR(x));
     } else if (IS_SYMBOL(x)) {
         const word_t val = lookup(x);
-        if (val == VOID) {
+        if (val == VOID && x != intern("void")) {
             error("unbound symbol %s", AS_SYMBOL(x));
         }
         return val;
@@ -546,8 +547,8 @@ static word_t capture(word_t x) {
         return cons(capture(CAR(x)), capture(CDR(x)));
     } else if (IS_SYMBOL(x)) {
         const word_t val = lookup(x);
-        if (val == VOID) {
-            return x;   
+        if (val == VOID || IS_PRIMITIVE(val)) {
+            return x;
         }
         return quote(val);
     } else {
