@@ -1,0 +1,9 @@
+IndentWidth: 4
+TabWidth: 4
+AlignConsecutiveMacros: true
+AlignAfterOpenBracket: BlockIndent
+AlignOperands: Align
+BasedOnStyle: Chromium
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+InsertBraces: true
