@@ -828,7 +828,7 @@ static word_t primitive_let(word_t x) {
 
     word_t vals = NIL;
     EACH_CONS(binding, CAR(x)) {
-        const word_t val = eval(CDDR(binding));
+        const word_t val = eval(CADDR(binding));
         vals             = cons(val, vals);
     }
 

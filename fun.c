@@ -1,5 +1,5 @@
 #include "genesis.h"
 
-int main() {
-    genesis_entry("cps.fun");
+int main(int argc, char *argv[]) {
+    genesis_entry("tests/let.fun");
 }
