@@ -824,19 +824,18 @@ static word_t primitive_cond(word_t x) {
 }
 
 static word_t primitive_let(word_t x) {
-    extend();
-
     word_t vals = NIL;
-    EACH_CONS(binding, CAR(x)) {
-        const word_t val = eval(CADDR(binding));
-        vals             = cons(val, vals);
+    EACH_CONS(bindings, CAR(x)) {
+        const word_t binding = CAR(bindings);
+        const word_t val = eval(CADR(binding));
+        CDR(binding) = cons(val, NIL);
     }
 
-    EACH_CONS(binding, CAR(x)) {
-        const word_t sym = CAAR(binding);
-        const word_t val = CAR(vals);
-        bind(sym, eval(val));
-        vals = CDR(vals);
+    extend();
+    EACH_CONS(bindings, CAR(x)) {
+        const word_t sym = CAAR(bindings);
+        const word_t val = CADDR(bindings);
+        bind(sym, val);
     }
 
     word_t y = begin(CDR(x));
