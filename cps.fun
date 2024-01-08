@@ -5,11 +5,15 @@
     (defun caddr (x) (car (cddr x)))
 
     (defun fun?   (x) (and (pair? x) (eq (car x) 'fun)))
+    (defun apply? (x) (pair? x))
     (defun unary? (x) (and (pair? x) (eq (length x) 2)))
     (defun aexp?  (x) (or (atom? x) (fun? x)))
 
-    (defun fun-args (x) (caadr x))
+    (defun fun-args (x) (cadr x))
     (defun fun-body (x) (caddr x))
+
+    (defun apply-fun  (x) (car x))
+    (defun apply-args (x) (cdr x))
 
     (defun unary-fun (x) (car x))
     (defun unary-arg (x) (cadr x))
@@ -23,38 +27,34 @@
         (let
             ((a  (fun-args x))
              (b  (fun-body x))
-             ($k (gensym)))
-             `(fun (,a ,$k) ,(tc b $k))))
+             ($k (gensym 'k)))
+             `(fun (,@a ,$k) ,(tc b $k))))
 
-    (defun tc (x c) 
+    (defun tc (x c)
         (cond
             ((aexp?  x) `(,c ,(m x)))
-            ((unary? x) (tc-unary x c))))
+            ((apply? x) (tc-apply x c))))
 
-    (defun tc-unary (x c)
+    (defun tc-apply (x c)
         (let
-            ((f  (unary-fun x))
-             (a  (unary-arg x))
-             ($f (gensym))
-             ($a (gensym)))
+            ((f  (apply-fun x))
+             (a  (apply-args x))
+             ($f (gensym 'f))
+             ($a (gensym 'a)))
              (tk f (fun ($f)
-                (tk a (fun ($a)
-                    `(,$f ,$a ,c)))))))
+                (t*k a (fun ($a)
+                    `(,$f @$a ,c)))))))
 
     (defun tk (x k)
         (cond
             ((aexp?  x) (k (m x)))
-            ((unary? x) (tk-unary x k))))
+            ((apply? x) (tk-apply x k))))
 
-    (defun tk-unary (x k)
+    (defun tk-apply (x k)
         (let*
-            ((f  (unary-fun x))
-             (a  (unary-arg x))
-             ($r (gensym))
-             ($c `(fun (,$r) ,(k $r))))
-             (tk f (fun ($f)
-                (tk a (fun $a)
-                    `(,$f ,$a ,c))))))
+            (($r (gensym 'r))
+             (c `(fun (,$r) ,(k $r))))
+             (tc x c)))
 
     (defun t*k (xs k)
         (cond
@@ -68,4 +68,4 @@
             ((aexp? x) (m x))
             (true      (tc x 'halt))))
     
-    3)
+    (tc '(f g h) 'halt))

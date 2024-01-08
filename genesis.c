@@ -6,6 +6,7 @@
  * Inspirations: Chicken, Ribbit, Femtolisp, Minilisp, Tinylisp and many more.
  */
 
+#include <math.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -119,11 +120,11 @@ typedef uint64_t word_t;
 
 #define STACK_SIZE    4096
 #define HEAP_SIZE     65536
-#define ROOTS_SIZE    512
+#define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
 #define BINDINGS_SIZE 512
 #define BUFFER_SIZE   4096
-#define TOKEN_SIZE    128
+#define TOKEN_SIZE    512
 
 #define IS_ATOM(x) !IS_PAIR(x)
 #define EQ(x, y)   ((x) == (y))
@@ -132,17 +133,24 @@ typedef uint64_t word_t;
 #define CAR(x) AS_PAIR(x)->car
 #define CDR(x) AS_PAIR(x)->cdr
 
-#define CAAR(x)  CAR(CAR(x))
-#define CADR(x)  CAR(CDR(x))
-#define CDAR(x)  CDR(CAR(x))
-#define CDDR(x)  CDR(CDR(x))
-#define CADDR(x) CAR(CDDR(x))
-#define CAADR(x) CAR(CADR(x))
-#define CDADR(x) CDR(CADR(x))
-#define CADAR(x) CAR(CDAR(x))
+#define CAAR(x)    CAR(CAR(x))
+#define CADR(x)    CAR(CDR(x))
+#define CDAR(x)    CDR(CAR(x))
+#define CDDR(x)    CDR(CDR(x))
+#define CADDR(x)   CAR(CDDR(x))
+#define CAADR(x)   CAR(CADR(x))
+#define CDADR(x)   CDR(CADR(x))
+#define CADAR(x)   CAR(CDAR(x))
+#define CDDDR(x)   CDR(CDDR(x))
+#define CAAAR(x)   CAR(CAAR(x))
+#define CDAAAR(x)  CDR(CAAAR(x))
+#define CAADAR(x)  CAR(CADAR(x))
+#define CDADAR(x)  CDR(CADAR(x))
+#define CADADAR(x) CAR(CDADAR(x))
 
-#define EACH_CONS(x, xs) for (word_t x = xs; (x) != NIL; (x) = CDR(x))
-#define TAKE_CONS(x)     for (; (x) != NIL; (x) = CDR(x))
+#define EACH_CONS(x, xs)       for (word_t x = xs; (x) != NIL; (x) = CDR(x))
+#define TAKE_CONS(x)           for (; (x) != NIL; (x) = CDR(x))
+#define TAKE_CONS_UNTIL_ONE(x) for (; (x) != NIL && CDR(x) != NIL; (x) = CDR(x))
 
 #define IS_EOF(c)        ((c) == '\0')
 #define IS_WHITESPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\n')
@@ -311,6 +319,7 @@ static word_t parse_quote(const char* type);
 /* Printing */
 
 static void print(word_t x);
+static void println(word_t x);
 static void print_vector(word_t x);
 static void print_list(word_t x);
 
@@ -495,8 +504,12 @@ static word_t intern(const char* data) {
 /* LIST */
 
 static word_t append(word_t head, word_t tail) {
-    if (!IS_PAIR(head)) {
+    if (head == NIL) {
         return tail;
+    }
+
+    if (IS_ATOM(head)) {
+        return cons(head, tail);
     }
 
     return cons(CAR(head), append(CDR(head), tail));
@@ -578,6 +591,7 @@ static word_t eval(word_t x) {
     const state_t state = save();
 
 start:
+
     if (IS_ATOM(x)) {
         x = evatom(x);
         goto end;
@@ -614,12 +628,7 @@ start:
         extend();
         bind_args(closure->args, x);
 
-        /* Evaluates multiple expressions within a closure  (implicit begin) */
-        for (x = closure->body; IS_PAIR(x) && CDR(x) != NIL; x = CDR(x)) {
-            eval(CAR(x));
-        }
-
-        x = CAR(x);
+        x = begin(closure->body);
 
         goto start;
     } else {
@@ -632,7 +641,7 @@ end:
 }
 
 static word_t evlis(word_t x) {
-    if (!IS_PAIR(x)) {
+    if (IS_ATOM(x)) {
         return cons(eval(x), NIL);
     }
 
@@ -673,24 +682,26 @@ static word_t evsym(word_t x) {
 }
 
 static word_t quasi(word_t x) {
-    if (!IS_PAIR(x)) {
+    if (IS_ATOM(x)) {
         return x;
+    }
+
+    if (IS_PAIR(CAR(x)) && CAAR(x) == intern("splicing")) {
+        return append(CADAR(x), quasi(CDR(x)));
+    }
+
+    if (IS_PAIR(CAR(x)) && CAAR(x) == intern("unquote")) {
+        if (IS_PAIR(CADAR(x)) && CAADAR(x) == intern("splicing")) {
+            return append(eval(CADADAR(x)), quasi(CDR(x)));
+        }
     }
 
     if (CAR(x) == intern("unquote")) {
         return eval(CADR(x));
     }
 
-    if (CAR(x) == intern("unquote-splicing")) {
-        return append(eval(CADR(x)), quasi(CDDR(x)));
-    }
-
     if (CAR(x) == intern("quasi")) {
         return quasi(CDR(x));
-    }
-
-    if (IS_PAIR(CAR(x)) && CAAR(x) == intern("unquote-splicing")) {
-        return append(eval(CADDR(x)), quasi(CDR(x)));
     }
 
     return cons(quasi(CAR(x)), quasi(CDR(x)));
@@ -699,11 +710,11 @@ static word_t quasi(word_t x) {
 static word_t begin(word_t x) {
     word_t y = NIL;
 
-    TAKE_CONS(x) {
+    TAKE_CONS_UNTIL_ONE(x) {
         y = eval(CAR(x));
     }
 
-    return y;
+    return CAR(x);
 }
 
 /* PARSING */
@@ -745,20 +756,21 @@ static word_t parse_expr() {
         case ',':
             return parse_quote("unquote");
         case '@':
-            return parse_quote("unquote-splicing");
+            return parse_quote("splicing");
         default:
             if (!IS_SPECIAL(*token)) {
                 return parse_atom();
             }
             error("unexpected token %s", token);
     }
+
     return VOID;
 }
 
 static word_t parse_atom() {
-    int     len;
-    int64_t integer;
-    float   real;
+    int     len     = 0;
+    int64_t integer = 0;
+    // float   real    = 0;
 
     if (SCAN_NUMBER("%lld%n", integer, len)) {
         return MAKE_INTEGER(integer);
@@ -815,6 +827,11 @@ static void print(word_t x) {
     }
 }
 
+static void println(word_t x) {
+    print(x);
+    putchar('\n');
+}
+
 static void print_list(word_t x) {
     putchar('(');
 
@@ -857,7 +874,7 @@ static void print_vector(word_t x) {
 /* PRIMITIVES */
 
 static word_t primitive_eval(word_t x) {
-    return eval(CAR(x));
+    return CAR(x);
 }
 
 static word_t primitive_begin(word_t x) {
@@ -885,7 +902,7 @@ static word_t primitive_car(word_t x) {
         error("cdr expects pair type");
     }
 
-    return CAAR(evlis(x));
+    return CAAR(x);
 }
 
 static word_t primitive_cdr(word_t x) {
@@ -893,7 +910,7 @@ static word_t primitive_cdr(word_t x) {
         error("cdr expects pair type");
     }
 
-    return CDAR(evlis(x));
+    return CDAR(x);
 }
 
 static word_t primitive_add(word_t x) {
@@ -1038,10 +1055,10 @@ static word_t primitive_cond(word_t x) {
     TAKE_CONS(x) {
         const word_t clause = CAR(x);
         const word_t cond   = eval(CAR(clause));
-        const word_t exp    = CADR(clause);
+        const word_t exp    = CDR(clause);
 
         if (!NOT(cond)) {
-            return eval(exp);
+            return begin(exp);
         }
     }
 
@@ -1072,10 +1089,7 @@ static word_t primitive_let(word_t x) {
         bind(var, val);
     }
 
-    word_t y = begin(CDR(x));
-
-    unwind(state);
-    return y;
+    return begin(CDR(x));
 }
 
 static word_t primitive_lets(word_t x) {
@@ -1090,10 +1104,7 @@ static word_t primitive_lets(word_t x) {
         bind(var, eval(val));
     }
 
-    word_t y = begin(CDR(x));
-
-    unwind(state);
-    return y;
+    return begin(CDR(x));
 }
 
 static word_t primitive_list(word_t x) {
@@ -1111,16 +1122,35 @@ static word_t primitive_length(word_t x) {
     return MAKE_INTEGER(y);
 }
 
+static word_t primitive_gensym(word_t x) {
+    char       sym[TOKEN_SIZE];
+    static int count = 0;
+
+    if (CAR(x) == NIL) {
+        snprintf(sym, sizeof(sym), "$%d", count++);
+    } else {
+        snprintf(sym, sizeof(sym), "$%s%d", AS_SYMBOL(CAR(x)), count++);
+    }
+
+    return intern(sym);
+}
+
+static word_t primitive_println(word_t x) {
+    print(x);
+    putchar('\n');
+    return VOID;
+}
+
 static const struct {
     const char* s;
     primitive_t p;
 } primitives[] = {
-    PRIM(eval, 1, 0),
+    PRIM(eval, 1, 1),
     PRIM(begin, 1, 1),
     PRIM(quote, 0, 1),
     PRIM(quasi, 0, 1),
     PRIM(unquote, 0, 1),
-    PRIM(cons, 0, 1),
+    PRIM(cons, 0, 0),
     PRIM(car, 0, 0),
     PRIM(cdr, 0, 0),
 
@@ -1135,9 +1165,10 @@ static const struct {
     PRIMA(>=, gte, 0, 0),
     PRIMA(<=, lte, 0, 0),
 
+    PRIM(eq, 0, 0),
     PRIM(not, 0, 0),
-    PRIM(or, 0, 0),
-    PRIM(and, 0, 0),
+    PRIM(or, 0, 1),
+    PRIM(and, 0, 1),
 
     PRIMA(nil?, is_nil, 0, 1),
     PRIMA(atom?, is_atom, 0, 1),
@@ -1159,6 +1190,9 @@ static const struct {
 
     PRIM(list, 0, 0),
     PRIM(length, 0, 1),
+
+    PRIM(gensym, 0, 0),
+    PRIM(println, 0, 0),
 
     {0}
 };
