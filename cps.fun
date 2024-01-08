@@ -1,64 +1,71 @@
 (begin
-    (defun cadr  (x) (car (cdr x)))
-    (defun caar  (x) (car (car x)))
     (defun cddr  (x) (cdr (cdr x)))
+    (defun cadr  (x) (car (cdr x)))
     (defun caadr (x) (car (cadr x)))
     (defun caddr (x) (car (cddr x)))
 
-    (defun void? (exp) (eq void exp))
-    (defun fun?  (exp) (and (pair? exp) (eq (car exp) 'fun)))
-    (defun app?  (exp) (and (pair? exp) (symbol? (car exp))))
-    (defun aexp? (exp) (or (atom? exp) (fun?  exp) (void? exp)))
+    (defun fun?   (x) (and (pair? x) (eq (car x) 'fun)))
+    (defun unary? (x) (and (pair? x) (eq (length x) 2)))
+    (defun aexp?  (x) (or (atom? x) (fun? x)))
 
-    (defun m (exp)
+    (defun fun-args (x) (caadr x))
+    (defun fun-body (x) (caddr x))
+
+    (defun unary-fun (x) (car x))
+    (defun unary-arg (x) (cadr x))
+
+    (defun m (x)
         (cond
-            ((atom? exp) exp)
-            ((fun? exp)  (m-fun exp))
-            (true  'm-error)))
-    
-    (defun m-fun (exp)
+            ((atom? x) x)
+            ((fun?  x) (m-fun x))))
+
+    (defun m-fun (x)
         (let
-            ((x (cadr exp))
-            (e  (caddr exp))
-            ($k (gensym)))
-            `(fun (@x ,$k) ,(tc e $k))))
+            ((a  (fun-args x))
+             (b  (fun-body x))
+             ($k (gensym)))
+             `(fun (,a ,$k) ,(tc b $k))))
 
-    (defun tc (exp c)
+    (defun tc (x c) 
         (cond
-            ((aexp? exp) `(,c ,(m exp)))
-            ((pair? exp)  (tc-app exp))
-            (true        'tc-error)))
+            ((aexp?  x) `(,c ,(m x)))
+            ((unary? x) (tc-unary x c))))
 
-    (defun tc-app (exp c)
+    (defun tc-unary (x c)
         (let
-            ((f (car exp))
-            (x  (cdr exp))
-            ($f (gensym))
-            ($x (gensym)))
-            (tk f (fun ($f)
-                (t*k x (fun ($x)
-                    `(,$f @$x ,c)))))))
+            ((f  (unary-fun x))
+             (a  (unary-arg x))
+             ($f (gensym))
+             ($a (gensym)))
+             (tk f (fun ($f)
+                (tk a (fun ($a)
+                    `(,$f ,$a ,c)))))))
 
-    (defun tk (exp k)
+    (defun tk (x k)
         (cond
-            ((aexp? exp) (k (m exp)))
-            ((pair? exp) (tk-app exp))
-            (true        'tk-error)))
+            ((aexp?  x) (k (m x)))
+            ((unary? x) (tk-unary x k))))
 
-    (defun tk-app (exp k)
+    (defun tk-unary (x k)
         (let*
-            (($r gensym)
-            (c `(fun (,$r) ,(k $r))))
-            (tc exp c)))
+            ((f  (unary-fun x))
+             (a  (unary-arg x))
+             ($r (gensym))
+             ($c `(fun (,$r) ,(k $r))))
+             (tk f (fun ($f)
+                (tk a (fun $a)
+                    `(,$f ,$a ,c))))))
 
-    (defun t*k (exps k)
-        (println 'exp: exps 'k: k)
+    (defun t*k (xs k)
         (cond
-            ((nil?  exps)  (k '()))
-            ((pair? exps) (tk (car exps) (fun (hd)
-                (t*k (cdr exps) (fun (tl) (k (cons hd tl)))))))
-            (true         't*k-error)))
+            ((nil? xs) (k '()))
+            ((pair? xs) (tk (car xs) (fun (hd)
+                (t*k (cdr xs) (fun (tl)
+                    (k (cons hd tl)))))))))
 
-    (defun cps (exp) (tc exp 'halt))
+    (defun cps (x)
+        (cond
+            ((aexp? x) (m x))
+            (true      (tc x 'halt))))
     
-    (cps '(f g h)))
+    3)

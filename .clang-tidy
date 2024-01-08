@@ -3,5 +3,4 @@ Checks: >
     bugprone-*,
     clang-analyzer-*,
     cppcoreguidelines-*
-    linuxkernel-*
     
