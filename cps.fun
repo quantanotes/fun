@@ -1,3 +1,17 @@
+; Unapologetically ripped off from Matt Might.
+;
+; exp = aexp
+;     | (begin exp*)
+;     | (prim exp*)
+;     | (exp exp*)
+;
+; aexp = (fun (symbol*) exp)
+;      | atom
+;
+; cexp = (aexp aexp*)
+;      | ((cps prim) aexp*)
+;
+
 (begin
     (defun cddr  (x) (cdr (cdr x)))
     (defun cadr  (x) (car (cdr x)))
@@ -18,6 +32,7 @@
     (defun unary-fun (x) (car x))
     (defun unary-arg (x) (cadr x))
 
+    ; exp -> aexp
     (defun m (x)
         (cond
             ((atom? x) x)
@@ -30,6 +45,7 @@
              ($k (gensym 'k)))
              `(fun (,@a ,$k) ,(tc b $k))))
 
+    ; exp | aexp -> cexp 
     (defun tc (x c)
         (cond
             ((aexp?  x) `(,c ,(m x)))
@@ -38,13 +54,12 @@
     (defun tc-apply (x c)
         (let
             ((f  (apply-fun x))
-             (a  (apply-args x))
-             ($f (gensym 'f))
-             ($a (gensym 'a)))
+             (a  (apply-args x)))
              (tk f (fun ($f)
                 (t*k a (fun ($a)
-                    `(,$f @$a ,c)))))))
-
+                    `(,$f ,@$a ,c)))))))
+    
+    ; exp | (aexp -> cexp) -> cexp
     (defun tk (x k)
         (cond
             ((aexp?  x) (k (m x)))
@@ -56,16 +71,17 @@
              (c `(fun (,$r) ,(k $r))))
              (tc x c)))
 
+    ; exp* | (aexp* -> cexp) -> cexp
     (defun t*k (xs k)
         (cond
             ((nil? xs) (k '()))
-            ((pair? xs) (tk (car xs) (fun (hd)
-                (t*k (cdr xs) (fun (tl)
-                    (k (cons hd tl)))))))))
+            ((pair? xs) (tk (car xs) (fun (head)
+                (t*k (cdr xs) (fun (tail)
+                    (k (cons head tail)))))))))
 
     (defun cps (x)
         (cond
-            ((aexp? x) (m x))
-            (true      (tc x 'halt))))
+            ((aexp? x)  (m x))
+            ((apply? x) (tc x 'halt))))
     
-    (tc '(f g h) 'halt))
+    (cps '(f g  h (i j (k l m)))))

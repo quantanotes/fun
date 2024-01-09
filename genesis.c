@@ -119,7 +119,7 @@ typedef uint64_t word_t;
 /* FORWARD DECLARATIONS */
 
 #define STACK_SIZE    4096
-#define HEAP_SIZE     65536
+#define HEAP_SIZE     (65536 * 4)
 #define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
 #define BINDINGS_SIZE 512
@@ -148,8 +148,14 @@ typedef uint64_t word_t;
 #define CDADAR(x)  CDR(CADAR(x))
 #define CADADAR(x) CAR(CDADAR(x))
 
-#define EACH_CONS(x, xs)       for (word_t x = xs; (x) != NIL; (x) = CDR(x))
-#define TAKE_CONS(x)           for (; (x) != NIL; (x) = CDR(x))
+#define EACH_CONS(x, xs) for (word_t x = xs; (x) != NIL; (x) = CDR(x))
+#define TAKE_CONS(x)     for (; (x) != NIL; (x) = CDR(x))
+#define ZIP_EACH_CONS(x, y, xs, ys)                              \
+    for (word_t(x) = (xs), (y) = (ys); (x) != NIL && (y) != NIL; \
+         (x) = CDR(x), (y) = CDR(y))
+#define ZIP_TAKE_CONS(x, y) \
+    for (; (x) != NIL && (y) != NIL; (x) = CDR(x), (y) = CDR(y))
+
 #define TAKE_CONS_UNTIL_ONE(x) for (; (x) != NIL && CDR(x) != NIL; (x) = CDR(x))
 
 #define IS_EOF(c)        ((c) == '\0')
@@ -241,7 +247,7 @@ static word_t* fromspace = heap[0];
 static word_t* tospace   = heap[1];
 static word_t* hp        = heap[0];
 
-static word_t  roots[];
+static word_t  roots[ROOTS_SIZE];
 static word_t* rp = roots;
 
 static state_t base;
@@ -319,9 +325,9 @@ static word_t parse_quote(const char* type);
 /* Printing */
 
 static void print(word_t x);
-static void println(word_t x);
 static void print_vector(word_t x);
 static void print_list(word_t x);
+static void println(word_t x);
 
 /* Hashtable */
 
@@ -348,11 +354,11 @@ static word_t alloc(size_t size) {
 }
 
 static void gc() {
-    swap_heaps();
+    // swap_heaps();
 
-    for (word_t* root = rp; root >= roots; root--) {
-        move(*root, MOVE_FORWARD);
-    }
+    // for (word_t* root = rp; root >= roots; root--) {
+    //     move(*root, MOVE_FORWARD);
+    // }
 }
 
 static void add_root(word_t root) {
@@ -409,6 +415,10 @@ static inline void swap_heaps() {
     fromspace   = tospace;
     tospace     = tmp;
     hp          = fromspace;
+}
+
+static inline size_t heap_size() {
+    return (size_t)(hp - fromspace) * sizeof(word_t);
 }
 
 /* CONSTRUCTORS */
@@ -479,6 +489,9 @@ static word_t make_closure(word_t args, word_t body, int macro) {
 }
 
 /* SYMBOLS */
+
+/* Debug key */
+word_t* sa;
 
 /* Interning ensures each symbol is allocated once. */
 static word_t intern(const char* data) {
@@ -575,13 +588,11 @@ static void bind(word_t var, word_t val) {
 }
 
 static void bind_args(word_t argvar, word_t argval) {
-    TAKE_CONS(argvar) {
+    ZIP_TAKE_CONS(argvar, argval) {
         const word_t var = CAR(argvar);
         const word_t val = CAR(argval);
 
         bind(var, val);
-
-        argval = CDR(argval);
     }
 }
 
@@ -591,7 +602,6 @@ static word_t eval(word_t x) {
     const state_t state = save();
 
 start:
-
     if (IS_ATOM(x)) {
         x = evatom(x);
         goto end;
@@ -664,8 +674,7 @@ static word_t evlis(word_t x) {
 
 static word_t evatom(word_t x) {
     if (IS_SYMBOL(x)) {
-        const word_t y = evsym(x);
-        return y;
+        return evsym(x);
     } else {
         return x;
     }
@@ -719,12 +728,22 @@ static word_t begin(word_t x) {
 
 /* PARSING */
 
-static char* next_token() {
-    size_t i = 0;
-
-    while (IS_WHITESPACE(*bp)) {
-        bp++;
+static void skip_comments_and_whitespace() {
+    while (IS_WHITESPACE(*bp) || *bp == ';') {
+        if (*bp == ';') {
+            while (*bp != '\0' && *bp != '\n') {
+                bp++;
+            }
+        } else {
+            bp++;
+        }
     }
+}
+
+static char* next_token() {
+    skip_comments_and_whitespace();
+
+    size_t i = 0;
 
     if (IS_SPECIAL(*bp)) {
         token[i++] = *bp++;
@@ -823,13 +842,14 @@ static void print(word_t x) {
     } else if (IS_STRING(x)) {
         printf("\"%s\"", (char*)AS_STRING(x));
     } else if (IS_CLOSURE(x)) {
-        AS_BOOLEAN(AS_CLOSURE(x)->macro) ? printf("<macro>") : printf("<fun>");
+        const closure_t* closure = AS_CLOSURE(x);
+        AS_BOOLEAN(closure->macro) ? printf("<macro>") : printf("<fun>");
+        printf("{ ");
+        print(closure->args);
+        printf(" :args ");
+        print(closure->body);
+        printf(" :body }");
     }
-}
-
-static void println(word_t x) {
-    print(x);
-    putchar('\n');
 }
 
 static void print_list(word_t x) {
@@ -869,6 +889,11 @@ static void print_vector(word_t x) {
     }
 
     putchar(']');
+}
+
+static void println(word_t x) {
+    print(x);
+    putchar('\n');
 }
 
 /* PRIMITIVES */
@@ -1066,25 +1091,26 @@ static word_t primitive_cond(word_t x) {
 }
 
 static word_t primitive_let(word_t x) {
-    const state_t state = save();
-
     /* Variables are bound in a separate environment, hence the two loops. One
      * for evaluating the variables, and the other for binding. */
 
-    word_t vals = NIL;
+    word_t bindings = NIL;
 
-    EACH_CONS(bindings, CAR(x)) {
-        const word_t binding = CAR(bindings);
+    /* _bindings = unevaluated bindings. */
+    EACH_CONS(_bindings, CAR(x)) {
+        const word_t binding = CAR(_bindings);
+        const word_t var     = (CAR(binding));
         const word_t val     = eval(CADR(binding));
 
-        CDR(binding) = cons(val, NIL);
+        bindings = cons(cons(var, val), bindings);
     }
 
     extend();
 
-    EACH_CONS(bindings, CAR(x)) {
-        const word_t var = CAAR(bindings);
-        const word_t val = CADAR(bindings);
+    TAKE_CONS(bindings) {
+        const word_t binding = CAR(bindings);
+        const word_t var     = CAR(binding);
+        const word_t val     = CDR(binding);
 
         bind(var, val);
     }
@@ -1093,8 +1119,6 @@ static word_t primitive_let(word_t x) {
 }
 
 static word_t primitive_lets(word_t x) {
-    const state_t state = save();
-
     extend();
 
     EACH_CONS(bindings, CAR(x)) {
@@ -1136,8 +1160,7 @@ static word_t primitive_gensym(word_t x) {
 }
 
 static word_t primitive_println(word_t x) {
-    print(x);
-    putchar('\n');
+    println(x);
     return VOID;
 }
 
@@ -1205,7 +1228,7 @@ static uint64_t hash_uint(uint64_t key) {
 
 static uint64_t hash_str(const char* key) {
     int      c    = 0;
-    uint64_t hash = 5831;
+    uint64_t hash = 5342;
 
     while ((c = (unsigned char)*key++)) {
         hash = ((hash << 5) + hash) + c;
@@ -1215,11 +1238,14 @@ static uint64_t hash_str(const char* key) {
 }
 
 static void init_hashtable(word_t* entries, size_t size) {
-    for (int i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; i++) {
         entries[i] = cons(VOID, VOID);
     }
 }
 
+/* Hashtable search generalises for string key and uint key. Assumes entries is
+ * a vector of key-value cons pairs.
+ */
 static size_t
 hashtable_search(const word_t* entries, size_t size, word_t key, hash_t ht) {
     uint64_t h = 0;
@@ -1323,8 +1349,7 @@ static void repl() {
             break;
         }
 
-        print(eval(parse()));
-        putchar('\n');
+        println(eval(parse()));
     }
 
     printf("goodbye!\n");
