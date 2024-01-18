@@ -2,5 +2,3 @@ Checks: >
     -*,
     bugprone-*,
     clang-analyzer-*,
-    cppcoreguidelines-*
-    

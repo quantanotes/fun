@@ -6,7 +6,6 @@
  * Inspirations: Chicken, Ribbit, Femtolisp, Minilisp, Tinylisp and many more.
  */
 
-#include <math.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -27,6 +26,7 @@ typedef uint64_t word_t;
 
 #define WORD_SIZE          8
 #define BYTE_TO_WORD(size) (((size) + WORD_SIZE - 1) / WORD_SIZE * WORD_SIZE)
+#define SIZE_OF(x)         (BYTE_TO_WORD(sizeof(x)))
 
 /* Special constants */
 
@@ -61,15 +61,15 @@ typedef uint64_t word_t;
 /* Cast to word */
 
 #define MAKE_OBJECT(x)    ((word_t)(x))
-#define MAKE_INTEGER(x)   ((x) << 1 | INTEGER_TAG)
+#define MAKE_INTEGER(x)   ((word_t)(x) << 1 | INTEGER_TAG)
 #define MAKE_SYMBOL(x)    ((word_t)(x) << 4 | SYMBOL_TAG)
 #define MAKE_BOOLEAN(x)   ((word_t)(x) << 4 | BOOLEAN_TAG)
 #define MAKE_PRIMITIVE(x) ((word_t)(x) << 4 | PRIMITIVE_TAG)
 
 /* Cast to type */
 
-#define AS_OBJECT(x)    ((object_t*)(x))
-#define AS_INTEGER(x)   ((x) >> 1)
+#define AS_OBJECT(x)    ((object_t*)GET_IF_MOVED(x))
+#define AS_INTEGER(x)   ((int64_t)(x) >> 1)
 #define AS_BOOLEAN(x)   ((x) >> 4)
 #define AS_SYMBOL(x)    ((char*)((x) >> 4))
 #define AS_PRIMITIVE(x) ((primitive_t*)((x) >> 4))
@@ -88,7 +88,7 @@ typedef uint64_t word_t;
 #define IS_SYMBOL(x)    (((x)&TAG_MASK) == SYMBOL_TAG)
 #define IS_PRIMITIVE(x) (((x)&TAG_MASK) == PRIMITIVE_TAG)
 
-#define IS_TYPE(x, t) (!IS_OBJECT(x) ? 0 : GET_OBJECT_TYPE(x) == (t))
+#define IS_TYPE(x, t) (!IS_OBJECT(x) ? 0 : GET_TYPE(x) == (t))
 #define IS_PAIR(x)    IS_TYPE(x, PAIR_TYPE)
 #define IS_VECTOR(x)  IS_TYPE(x, VECTOR_TYPE)
 #define IS_STRING(x)  IS_TYPE(x, STRING_TYPE)
@@ -97,6 +97,8 @@ typedef uint64_t word_t;
 
 /* Object header */
 
+#define EXP32       0xFFFFFFFF
+#define EXP48       0xFFFFFFFFFFFF
 #define FLAGS_SHIFT 0x3C
 #define TYPE_SHIFT  0x38
 #define SIZE_SHIFT  0x18
@@ -105,24 +107,31 @@ typedef uint64_t word_t;
     (((word_t)(flags) << FLAGS_SHIFT) | ((word_t)(type) << TYPE_SHIFT) | \
      ((word_t)(size) << SIZE_SHIFT))
 
-#define SET_HEADER(x, flags, type, size)                            \
-    (GET_HEADER(x) = ((GET_HEADER(x)) & ~(0xFULL << FLAGS_SHIFT)) | \
-                     MAKE_HEADER(flags, type, size))
+#define GET_HEADER(x) (((word_t*)(x))[0])
+#define GET_FLAGS(x)  (GET_HEADER(x) >> FLAGS_SHIFT)
+#define GET_TYPE(x)   ((GET_HEADER(x) >> TYPE_SHIFT) & 0xF)
+#define GET_SIZE(x)   ((GET_HEADER(x) >> SIZE_SHIFT) & EXP32)
 
-#define GET_HEADER(x)       (AS_OBJECT(x)->header)
-#define GET_OBJECT_FLAGS(x) ((GET_HEADER(x) >> FLAGS_SHIFT) & 0xF)
-#define GET_OBJECT_TYPE(x)  ((GET_HEADER(x) >> TYPE_SHIFT) & 0xF)
-#define GET_OBJECT_SIZE(x)  ((GET_HEADER(x) >> SIZE_SHIFT) & 0xFFFFFFFF)
+#define SET_FLAGS(x, flags) \
+    (GET_HEADER(x) = GET_HEADER(x) | ((flags) << FLAGS_SHIFT))
 
-// TODO
+/* Gc flag for indicating that an object no longer exists at it's previous
+ * location. Make moved creates a special type of pointer which contains the
+ * new location. Set moved indicates that this pointer is a moved value. */
+
+#define SET_MOVED(x)     (SET_FLAGS(x, GET_FLAGS(x) | 0x8))
+#define MAKE_MOVED(x, y) (GET_HEADER(x) = (y), SET_MOVED(x))
+#define GET_MOVED(x)     (GET_HEADER(x) & EXP48)
+#define IS_MOVED(x)      (GET_FLAGS(x) >> 3)
+#define GET_IF_MOVED(x)  (IS_MOVED(x) ? GET_MOVED(x) : (x))
 
 /* FORWARD DECLARATIONS */
 
 #define STACK_SIZE    4096
-#define HEAP_SIZE     (65536 * 4)
+#define HEAP_SIZE     65536
 #define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
-#define BINDINGS_SIZE 512
+#define BINDINGS_SIZE 256
 #define BUFFER_SIZE   4096
 #define TOKEN_SIZE    512
 
@@ -148,15 +157,16 @@ typedef uint64_t word_t;
 #define CDADAR(x)  CDR(CADAR(x))
 #define CADADAR(x) CAR(CDADAR(x))
 
-#define EACH_CONS(x, xs) for (word_t x = xs; (x) != NIL; (x) = CDR(x))
-#define TAKE_CONS(x)     for (; (x) != NIL; (x) = CDR(x))
+#define EACH_CONS(x, xs)       for (word_t x = xs; (x) != NIL; (x) = CDR(x))
+#define TAKE_CONS(x)           for (; (x) != NIL; (x) = CDR(x))
+#define TAKE_CONS_UNTIL_ONE(x) for (; (x) != NIL && CDR(x) != NIL; (x) = CDR(x))
+
 #define ZIP_EACH_CONS(x, y, xs, ys)                              \
     for (word_t(x) = (xs), (y) = (ys); (x) != NIL && (y) != NIL; \
          (x) = CDR(x), (y) = CDR(y))
+
 #define ZIP_TAKE_CONS(x, y) \
     for (; (x) != NIL && (y) != NIL; (x) = CDR(x), (y) = CDR(y))
-
-#define TAKE_CONS_UNTIL_ONE(x) for (; (x) != NIL && CDR(x) != NIL; (x) = CDR(x))
 
 #define IS_EOF(c)        ((c) == '\0')
 #define IS_WHITESPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\n')
@@ -192,9 +202,9 @@ typedef uint64_t word_t;
     } while (0)
 
 typedef struct {
-    word_t* sp;
-    word_t* rp;
-    word_t  env;
+    word_t*  sp;
+    word_t** rp;
+    word_t   env;
 } state_t;
 
 typedef struct {
@@ -230,11 +240,6 @@ typedef struct {
 } primitive_t;
 
 typedef enum {
-    MOVE_EVICT,
-    MOVE_FORWARD,
-} move_t;
-
-typedef enum {
     HASH_UINT,
     HASH_STRING,
 } hash_t;
@@ -247,8 +252,8 @@ static word_t* fromspace = heap[0];
 static word_t* tospace   = heap[1];
 static word_t* hp        = heap[0];
 
-static word_t  roots[ROOTS_SIZE];
-static word_t* rp = roots;
+static word_t*  roots[ROOTS_SIZE];
+static word_t** rp = roots;
 
 static state_t base;
 static word_t  symbols;
@@ -263,29 +268,28 @@ static char token[TOKEN_SIZE];
 
 static word_t alloc(size_t size);
 static void   gc();
-static void   add_root(word_t root);
+static word_t move(word_t x);
 
-static word_t stack_alloc(size_t size);
+static inline void push_root(word_t* root);
+static inline void push_roots(int n, ...);
+static inline void pop_root();
+static inline void pop_roots(int n);
+
+// static word_t stack_alloc(size_t size);
 static word_t heap_alloc(size_t size);
 static word_t any_alloc(word_t** memory, size_t size, word_t* capacity);
 
-static word_t evict(word_t x);
-static word_t forward(word_t x);
-static word_t move(word_t x, move_t mt);
-
-static inline int    in_stack(word_t x);
-static inline int    should_evict(word_t x);
 static inline void   swap_heaps();
 static inline size_t heap_size();
 
 /* Constructors */
 
-static object_t* new_object(word_t type, word_t size);
-static word_t    cons(word_t car, word_t cdr);
-static word_t    make_vector(size_t size, const word_t* data);
-static word_t    make_string(const char* data);
-static word_t    make_env(word_t parent);
-static word_t    make_closure(word_t args, word_t body, int macro);
+static object_t* new(word_t type, word_t size);
+static word_t cons(word_t car, word_t cdr);
+static word_t make_vector(size_t size, const word_t* data);
+static word_t make_string(const char* data);
+static word_t make_env(word_t parent);
+static word_t make_closure(word_t args, word_t body, int macro);
 
 /* Symbols */
 
@@ -297,7 +301,6 @@ static word_t append(word_t head, word_t tail);
 
 /* Environment */
 
-static void    add_env(word_t x);
 static void    extend();
 static state_t save();
 static void    unwind(state_t state);
@@ -344,30 +347,52 @@ static void    panic(const char* format, ...);
 /* MEMORY */
 
 static word_t alloc(size_t size) {
-    const word_t ptr = stack_alloc(size);
+    /* Stack allocation will be brought back once CPS is implemented. */
 
-    if (ptr != VOID) {
-        return ptr;
-    }
+    // const word_t ptr = stack_alloc(size);
+
+    // if (ptr != VOID) {
+    //     return ptr;
+    // }
 
     return heap_alloc(size);
 }
 
 static void gc() {
-    // swap_heaps();
+    swap_heaps();
 
-    // for (word_t* root = rp; root >= roots; root--) {
-    //     move(*root, MOVE_FORWARD);
-    // }
+    for (word_t** root = rp - 1; root >= roots; root--) {
+        **root = move(**root);
+    }
 }
 
-static void add_root(word_t root) {
+static inline void push_root(word_t* root) {
     *rp++ = root;
 }
 
-static word_t stack_alloc(size_t size) {
-    return any_alloc(&sp, size, stack + STACK_SIZE);
+static inline void push_roots(int n, ...) {
+    va_list args;
+    va_start(args, n);
+
+    for (int i = 0; i < n; i++) {
+        word_t* root = va_arg(args, word_t*);
+        push_root(root);
+    }
+
+    va_end(args);
 }
+
+static inline void pop_root() {
+    rp--;
+}
+
+static inline void pop_roots(int n) {
+    rp -= n;
+}
+
+// static word_t stack_alloc(size_t size) {
+//     return any_alloc(&sp, size, stack + STACK_SIZE);
+// }
 
 static word_t heap_alloc(size_t size) {
     if (hp + size >= fromspace + HEAP_SIZE) {
@@ -394,20 +419,48 @@ static word_t any_alloc(word_t** memory, size_t size, word_t* capacity) {
     return ptr;
 }
 
-static word_t forward(word_t x) {
-    return move(x, MOVE_FORWARD);
-}
-
-static word_t evict(word_t x) {
-    return move(x, MOVE_EVICT);
-}
-
 /* Moves an object to the heap. There are two types of moves, a forward and an
  * evict. A forward is for when the GC wants to copy to the new heap. An evict
  * is to move objects with hanging references from the stack to the heap.
  */
-static word_t move(word_t x, move_t mt) {
-    return x;
+static word_t move(word_t x) {
+    if (!IS_OBJECT(x) || x == 0) {
+        return x;
+    }
+
+    if (IS_MOVED(x)) {
+        return GET_MOVED(x);
+    }
+
+    const word_t type = GET_TYPE(x);
+    const size_t size = GET_SIZE(x);
+
+    object_t* obj     = AS_OBJECT(x);
+    object_t* new_obj = new (type, size);
+
+    const word_t y = MAKE_OBJECT(new_obj);
+
+    /* Indicate to further scans that this object has already been moved */
+    MAKE_MOVED(x, y);
+
+    /* Scan references contained in an object */
+    switch (type) {
+        case STRING_TYPE:
+            break;
+        default:
+            for (size_t i = 0; i < size; i++) {
+                obj->data[i] = IS_OBJECT(x) ? move(obj->data[i]) : x;
+            }
+    }
+
+    /* Omitting header from copy as it contains move information */
+    memcpy((word_t*)new_obj + 1, (word_t*)obj + 1, size * WORD_SIZE);
+
+    return y;
+}
+
+static inline int in_stack(word_t x) {
+    return (word_t*)x < sp && (word_t*)x >= stack;
 }
 
 static inline void swap_heaps() {
@@ -423,7 +476,7 @@ static inline size_t heap_size() {
 
 /* CONSTRUCTORS */
 
-static object_t* new_object(word_t type, word_t size) {
+static object_t* new(word_t type, word_t size) {
     object_t* obj = (object_t*)alloc(size + 1);
 
     obj->header = MAKE_HEADER(0, type, size);
@@ -432,22 +485,25 @@ static object_t* new_object(word_t type, word_t size) {
 }
 
 static word_t cons(word_t car, word_t cdr) {
-    object_t* obj  = new_object(PAIR_TYPE, PAIR_SIZE);
-    pair_t*   pair = AS_PAIR(obj);
+    push_roots(2, &car, &cdr);
 
-    pair->car = evict(car);
-    pair->cdr = evict(cdr);
+    object_t* obj  = new (PAIR_TYPE, PAIR_SIZE);
+    pair_t*   pair = (pair_t*)obj->data;
 
+    pair->car = car;
+    pair->cdr = cdr;
+
+    pop_roots(2);
     return MAKE_OBJECT(obj);
 }
 
 static word_t make_vector(size_t size, const word_t* data) {
-    object_t* obj    = new_object(VECTOR_TYPE, size);
-    vector_t* vector = AS_VECTOR(obj);
+    object_t* obj    = new (VECTOR_TYPE, size);
+    vector_t* vector = (vector_t*)obj->data;
 
     if (data != NULL) {
         for (size_t i = 0; i < size; i++) {
-            (*vector)[i] = evict(data[i]);
+            (*vector)[i] = data[i];
         }
     }
 
@@ -457,7 +513,7 @@ static word_t make_vector(size_t size, const word_t* data) {
 static word_t make_string(const char* data) {
     const size_t size = strlen(data) + 1;
 
-    object_t* obj = new_object(STRING_TYPE, BYTE_TO_WORD(size));
+    object_t* obj = new (STRING_TYPE, BYTE_TO_WORD(size));
 
     strcpy_s((char*)obj->data, size, data);
 
@@ -465,33 +521,44 @@ static word_t make_string(const char* data) {
 }
 
 static word_t make_env(word_t parent) {
-    object_t* obj = new_object(ENV_TYPE, ENV_SIZE);
+    push_root(&parent);
+
+    object_t* obj = new (ENV_TYPE, ENV_SIZE);
     env_t*    env = (env_t*)obj->data;
+    word_t    ref = MAKE_OBJECT(obj);
 
-    env->parent   = evict(parent);
-    env->bindings = make_vector(BINDINGS_SIZE, 0);
+    env->parent = parent;
 
-    init_hashtable(*AS_VECTOR(env->bindings), BINDINGS_SIZE);
+    /* GC can be triggered when making nested object so we add the env to roots
+     * as a register.
+     */
 
-    return MAKE_OBJECT(obj);
+    push_root(&ref);
+
+    const word_t bindings = make_vector(BINDINGS_SIZE, 0);
+    init_hashtable(*AS_VECTOR(bindings), BINDINGS_SIZE);
+    AS_ENV(ref)->bindings = bindings;
+
+    pop_roots(2);
+    return ref;
 }
 
 static word_t make_closure(word_t args, word_t body, int macro) {
-    object_t*  obj     = new_object(CLOSURE_TYPE, CLOSURE_SIZE);
+    push_roots(3, &args, &body, &macro);
+
+    object_t*  obj     = new (CLOSURE_TYPE, CLOSURE_SIZE);
     closure_t* closure = (closure_t*)obj->data;
 
-    closure->env   = evict(env);
-    closure->args  = evict(args);
-    closure->body  = evict(body);
+    closure->env   = env;
+    closure->args  = args;
+    closure->body  = body;
     closure->macro = MAKE_BOOLEAN(macro);
 
+    pop_roots(3);
     return MAKE_OBJECT(obj);
 }
 
 /* SYMBOLS */
-
-/* Debug key */
-word_t* sa;
 
 /* Interning ensures each symbol is allocated once. */
 static word_t intern(const char* data) {
@@ -501,14 +568,15 @@ static word_t intern(const char* data) {
     const size_t index =
         hashtable_search(*vector, size, (word_t)data, HASH_STRING);
 
-    if (index == -1) {
+    if (index == (size_t)-1) {
         panic("symbol table overflow");
     }
 
     word_t* symbol = &CAR((*vector)[index]);
 
     if (*symbol == VOID) {
-        *symbol = make_string(data);
+        const word_t string = make_string(data);
+        *symbol             = string;
     }
 
     return MAKE_SYMBOL(AS_STRING(*symbol));
@@ -530,14 +598,8 @@ static word_t append(word_t head, word_t tail) {
 
 /* ENVIRONMENT */
 
-static void add_env(word_t x) {
-    AS_ENV(x)->parent = env;
-    env               = x;
-}
-
 static void extend() {
     env = make_env(env);
-    add_root(env);
 }
 
 static state_t save() {
@@ -577,7 +639,7 @@ static void bind(word_t var, word_t val) {
     const size_t index =
         hashtable_search(*bindings, BINDINGS_SIZE, var, HASH_UINT);
 
-    if (index == -1) {
+    if (index == (size_t)-1) {
         error("binding table overflow");
     }
 
@@ -601,14 +663,17 @@ static void bind_args(word_t argvar, word_t argval) {
 static word_t eval(word_t x) {
     const state_t state = save();
 
+    word_t head = NIL;
+    push_roots(2, &x, &head);
+
 start:
     if (IS_ATOM(x)) {
         x = evatom(x);
         goto end;
     }
 
-    const word_t head = eval(CAR(x));
-    x                 = CDR(x);
+    head = eval(CAR(x));
+    x    = CDR(x);
 
     if (IS_PRIMITIVE(head)) {
         const primitive_t* primitive = AS_PRIMITIVE(head);
@@ -651,12 +716,9 @@ end:
 }
 
 static word_t evlis(word_t x) {
-    if (IS_ATOM(x)) {
-        return cons(eval(x), NIL);
-    }
-
     word_t y    = NIL;
     word_t tail = NIL;
+    push_roots(2, &y, &tail);
 
     TAKE_CONS(x) {
         const word_t new = cons(eval(CAR(x)), NIL);
@@ -669,6 +731,7 @@ static word_t evlis(word_t x) {
         }
     }
 
+    pop_roots(2);
     return y;
 }
 
@@ -718,11 +781,13 @@ static word_t quasi(word_t x) {
 
 static word_t begin(word_t x) {
     word_t y = NIL;
+    push_root(&y);
 
     TAKE_CONS_UNTIL_ONE(x) {
         y = eval(CAR(x));
     }
 
+    pop_root();
     return CAR(x);
 }
 
@@ -787,7 +852,7 @@ static word_t parse_expr() {
 }
 
 static word_t parse_atom() {
-    int     len     = 0;
+    size_t  len     = 0;
     int64_t integer = 0;
     // float   real    = 0;
 
@@ -849,6 +914,10 @@ static void print(word_t x) {
         printf(" :args ");
         print(closure->body);
         printf(" :body }");
+    } else if (IS_OBJECT(x)) {
+        printf("<object>{ %lld :type }", GET_TYPE(x));
+    } else {
+        printf("<value>{ %lld :tag }", x & TAG_MASK);
     }
 }
 
@@ -875,12 +944,12 @@ static void print_list(word_t x) {
 }
 
 static void print_vector(word_t x) {
-    const size_t    size   = GET_OBJECT_SIZE(x);
+    const size_t    size   = GET_SIZE(x);
     const vector_t* vector = AS_VECTOR(x);
 
     putchar('[');
 
-    for (int i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; i++) {
         print((*vector)[i]);
 
         if (i < size - 1) {
@@ -1058,7 +1127,10 @@ static word_t primitive_defun(word_t x) {
     const word_t var  = CAR(x);
     const word_t args = CADR(x);
     const word_t body = CDDR(x);
-    const word_t fun  = make_closure(args, body, 0);
+    push_roots(3, var, &args, &body);
+
+    const word_t fun = make_closure(args, body, 0);
+    pop_roots(3);
 
     bind(var, fun);
 
@@ -1066,10 +1138,13 @@ static word_t primitive_defun(word_t x) {
 }
 
 static word_t primitive_defmacro(word_t x) {
-    const word_t var   = CAR(x);
-    const word_t args  = CADR(x);
-    const word_t body  = CDDR(x);
+    const word_t var  = CAR(x);
+    const word_t args = CADR(x);
+    const word_t body = CDDR(x);
+    push_roots(3, &var, &args, &body);
+
     const word_t macro = make_closure(args, body, 1);
+    pop_roots(3);
 
     bind(var, macro);
 
@@ -1292,7 +1367,7 @@ static void init_symbols() {
 
     init_hashtable(*AS_VECTOR(symbols), SYMBOLS_SIZE);
 
-    add_root(symbols);
+    push_root(&symbols);
 }
 
 static void init_primitives() {
@@ -1308,7 +1383,7 @@ static void init_primitives() {
 
 static void init_env() {
     env = make_env(NIL);
-    add_root(env);
+    push_root(&env);
 }
 
 static void open(const char* path) {

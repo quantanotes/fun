@@ -84,4 +84,4 @@
             ((aexp? x)  (m x))
             ((apply? x) (tc x 'halt))))
     
-    (cps '(f g  h (i j (k l m)))))
+    (cps '(+ 5 67 5)))
