@@ -7,3 +7,4 @@ BasedOnStyle: Chromium
 AlignConsecutiveAssignments: true
 AlignConsecutiveDeclarations: true
 InsertBraces: true
+IndentPPDirectives: BeforeHash

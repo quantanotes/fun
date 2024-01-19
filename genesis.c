@@ -128,7 +128,7 @@ typedef uint64_t word_t;
 /* FORWARD DECLARATIONS */
 
 #define STACK_SIZE    4096
-#define HEAP_SIZE     65536
+#define HEAP_SIZE     65536 * 100
 #define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
 #define BINDINGS_SIZE 256
@@ -585,15 +585,21 @@ static word_t intern(const char* data) {
 /* LIST */
 
 static word_t append(word_t head, word_t tail) {
-    if (head == NIL) {
-        return tail;
+    word_t y = tail;
+    push_roots(2, &y, &head);
+
+    while (head != NIL) {
+        if (IS_ATOM(head)) {
+            y = cons(head, y);
+            break;
+        } else {
+            y    = cons(CAR(head), y);
+            head = CDR(head);
+        }
     }
 
-    if (IS_ATOM(head)) {
-        return cons(head, tail);
-    }
-
-    return cons(CAR(head), append(CDR(head), tail));
+    pop_roots(2);
+    return y;
 }
 
 /* ENVIRONMENT */

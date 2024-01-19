@@ -74,7 +74,7 @@
     ; exp* | (aexp* -> cexp) -> cexp
     (defun t*k (xs k)
         (cond
-            ((nil? xs) (k '()))
+            ((nil? xs) (k nil))
             ((pair? xs) (tk (car xs) (fun (head)
                 (t*k (cdr xs) (fun (tail)
                     (k (cons head tail)))))))))
@@ -84,4 +84,4 @@
             ((aexp? x)  (m x))
             ((apply? x) (tc x 'halt))))
     
-    (cps '(+ 5 67 5)))
+    (cps '(+ 1 2 3)))
