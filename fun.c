@@ -1,5 +1,5 @@
 #include "genesis.h"
 
 int main(int argc, char *argv[]) {
-    return genesis_entry("fun/cps.fun");
+    return genesis_entry("fun/ff.fun");
 }

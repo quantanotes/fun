@@ -1,37 +1,20 @@
-; Unapologetically ripped off from Matt Might.
-;
-; exp = aexp
-;     | (begin exp*)
-;     | (prim exp*)
-;     | (exp exp*)
-;
-; aexp = (fun (symbol*) exp)
-;      | atom
-;
-; cexp = (aexp aexp*)
-;      | ((cps prim) aexp*)
-;
+|# Continuation Passing Style Transform
+
+Unapologetically ripped off from Matt Might.
+
+exp = aexp
+    | (begin exp*)
+    | (prim exp*)
+    | (exp exp*)
+
+aexp = (fun (symbol*) exp)
+     | atom
+
+cexp = (aexp aexp*)
+     | ((cps prim) aexp*)
+|#
 
 (begin
-    (defun cddr  (x) (cdr (cdr x)))
-    (defun cadr  (x) (car (cdr x)))
-    (defun caadr (x) (car (cadr x)))
-    (defun caddr (x) (car (cddr x)))
-
-    (defun fun?   (x) (and (pair? x) (eq (car x) 'fun)))
-    (defun apply? (x) (pair? x))
-    (defun unary? (x) (and (pair? x) (eq (length x) 2)))
-    (defun aexp?  (x) (or (atom? x) (fun? x)))
-
-    (defun fun-args (x) (cadr x))
-    (defun fun-body (x) (caddr x))
-
-    (defun apply-fun  (x) (car x))
-    (defun apply-args (x) (cdr x))
-
-    (defun unary-fun (x) (car x))
-    (defun unary-arg (x) (cadr x))
-
     ; exp -> aexp
     (defun m (x)
         (cond
@@ -82,6 +65,4 @@
     (defun cps (x)
         (cond
             ((aexp? x)  (m x))
-            ((apply? x) (tc x 'halt))))
-    
-    (cps '(+ 1 2 3)))
+            ((apply? x) (tc x 'halt)))))

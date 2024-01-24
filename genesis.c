@@ -127,8 +127,8 @@ typedef uint64_t word_t;
 
 /* FORWARD DECLARATIONS */
 
-#define STACK_SIZE    4096
-#define HEAP_SIZE     65536 * 100
+#define STACK_SIZE    16777216  /* 2MB*/
+#define HEAP_SIZE     335544320 /* 40 MB */
 #define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
 #define BINDINGS_SIZE 256
@@ -172,18 +172,21 @@ typedef uint64_t word_t;
 #define IS_WHITESPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\n')
 #define IS_SPECIAL(c)                                                       \
     ((c) == '(' || (c) == ')' || (c) == '\'' || (c) == '`' || (c) == ',' || \
-     (c) == '@')
+     (c) == '@' || (c) == '"')
+#define IS_COMMENT(c)             ((c) == ';')
+#define IS_BLOCK_COMMENT_START(c) (*(c) == '#' && *((c) + 1) == '|')
+#define IS_BLOCK_COMMENT_END(c)   (*(c) == '|' && *((c) + 1) == '#')
 
 #define SCAN_NUMBER(fmt, num, len) \
     sscanf_s(token, fmt, &(num), &(len)) > 0 && (len) == strlen(token)
 
 #define PRIM(name, tailcall, macro)                                   \
-#name, (primitive_t) {                                            \
+    #name, (primitive_t) {                                            \
         primitive_##name, MAKE_BOOLEAN(tailcall), MAKE_BOOLEAN(macro) \
     }
 
 #define PRIMA(alias, name, tailcall, macro)                           \
-#alias, (primitive_t) {                                           \
+    #alias, (primitive_t) {                                           \
         primitive_##name, MAKE_BOOLEAN(tailcall), MAKE_BOOLEAN(macro) \
     }
 
@@ -298,6 +301,7 @@ static word_t intern(const char* data);
 /* List */
 
 static word_t append(word_t head, word_t tail);
+static word_t reverse(word_t list);
 
 /* Environment */
 
@@ -307,11 +311,13 @@ static void    unwind(state_t state);
 static word_t  lookup(word_t var);
 static void    bind(word_t var, word_t val);
 static void    bind_args(word_t argvar, word_t argval);
+static word_t  import(const char* path);
 
 /* Evaluation */
 
 static word_t eval(word_t x);
 static word_t evlis(word_t x);
+static word_t evargs(word_t x, word_t args);
 static word_t evatom(word_t x);
 static word_t evsym(word_t x);
 static word_t quasi(word_t x);
@@ -324,6 +330,7 @@ static word_t parse_expr();
 static word_t parse_atom();
 static word_t parse_list();
 static word_t parse_quote(const char* type);
+static word_t parse_string();
 
 /* Printing */
 
@@ -419,10 +426,6 @@ static word_t any_alloc(word_t** memory, size_t size, word_t* capacity) {
     return ptr;
 }
 
-/* Moves an object to the heap. There are two types of moves, a forward and an
- * evict. A forward is for when the GC wants to copy to the new heap. An evict
- * is to move objects with hanging references from the stack to the heap.
- */
 static word_t move(word_t x) {
     if (!IS_OBJECT(x) || x == 0) {
         return x;
@@ -585,20 +588,30 @@ static word_t intern(const char* data) {
 /* LIST */
 
 static word_t append(word_t head, word_t tail) {
-    word_t y = tail;
-    push_roots(2, &y, &head);
-
-    while (head != NIL) {
-        if (IS_ATOM(head)) {
-            y = cons(head, y);
-            break;
-        } else {
-            y    = cons(CAR(head), y);
-            head = CDR(head);
-        }
+    if (head == NIL) {
+        return tail;
     }
 
-    pop_roots(2);
+    word_t y = head;
+    push_roots(1, &y);
+
+    while (CDR(y) != NIL) {
+        y = CDR(y);
+    }
+
+    CDR(y) = tail;
+
+    pop_roots(1);
+    return head;
+}
+
+static word_t reverse(word_t x) {
+    word_t y = NIL;
+
+    TAKE_CONS(x) {
+        y = cons(CAR(x), y);
+    }
+
     return y;
 }
 
@@ -664,6 +677,25 @@ static void bind_args(word_t argvar, word_t argval) {
     }
 }
 
+static word_t import(const char* path) {
+    FILE* file = NULL;
+    fopen_s(&file, path, "r");
+
+    if (file == NULL) {
+        panic("io error");
+    }
+
+    fseek(file, 0L, SEEK_END);
+    const long size = ftell(file);
+    rewind(file);
+
+    fread(buffer, 1, size, file);
+    fclose(file);
+    buffer[size] = '\0';
+
+    return eval(parse());
+}
+
 /* EVALUATION */
 
 static word_t eval(word_t x) {
@@ -702,7 +734,7 @@ start:
         const int macro = AS_BOOLEAN(closure->macro);
 
         if (!macro) {
-            x = evlis(x);
+            x = evargs(x, closure->args);
         }
 
         env = closure->env;
@@ -734,6 +766,38 @@ static word_t evlis(word_t x) {
         } else {
             CDR(tail) = new;
             tail      = CDR(tail);
+        }
+    }
+
+    pop_roots(2);
+    return y;
+}
+
+static word_t evargs(word_t x, word_t args) {
+    word_t y    = NIL;
+    word_t tail = NIL;
+    push_roots(2, &y, &tail);
+
+    ZIP_TAKE_CONS(x, args) {
+        word_t new;
+        const word_t rest = CDR(args);
+
+        if (rest != NIL && CAR(rest) == intern("...")) {
+            new = cons(evlis(x), NIL);
+            x   = NIL;
+        } else {
+            new = cons(eval(CAR(x)), NIL);
+        }
+
+        if (y == NIL) {
+            tail = y = new;
+        } else {
+            CDR(tail) = new;
+            tail      = CDR(tail);
+        }
+
+        if (x == NIL) {
+            break;
         }
     }
 
@@ -787,24 +851,39 @@ static word_t quasi(word_t x) {
 
 static word_t begin(word_t x) {
     word_t y = NIL;
-    push_root(&y);
 
     TAKE_CONS_UNTIL_ONE(x) {
         y = eval(CAR(x));
     }
 
-    pop_root();
     return CAR(x);
 }
 
 /* PARSING */
 
+static void skip_comment() {
+    while (!IS_EOF(*bp) && *bp != '\n') {
+        bp++;
+    }
+}
+
+static void skip_block_comment() {
+    bp += 2;
+
+    while (!IS_EOF(*bp) && !IS_BLOCK_COMMENT_END(bp)) {
+        bp++;
+    }
+
+    bp += 2;
+}
+
 static void skip_comments_and_whitespace() {
-    while (IS_WHITESPACE(*bp) || *bp == ';') {
-        if (*bp == ';') {
-            while (*bp != '\0' && *bp != '\n') {
-                bp++;
-            }
+    while (IS_WHITESPACE(*bp) || IS_COMMENT(*bp) || IS_BLOCK_COMMENT_START(bp)
+    ) {
+        if (IS_COMMENT(*bp)) {
+            skip_comment();
+        } else if (IS_BLOCK_COMMENT_START(bp)) {
+            skip_block_comment();
         } else {
             bp++;
         }
@@ -847,6 +926,8 @@ static word_t parse_expr() {
             return parse_quote("unquote");
         case '@':
             return parse_quote("splicing");
+        case '"':
+            return parse_string();
         default:
             if (!IS_SPECIAL(*token)) {
                 return parse_atom();
@@ -891,6 +972,28 @@ static word_t parse_quote(const char* type) {
     return cons(intern(type), cons(parse_expr(), NIL));
 }
 
+static word_t parse_string() {
+    size_t i = 0;
+
+    while (*bp != '\"' && *bp != '\0') {
+        if (*bp == '\\' && *(bp + 1) == '\"') {
+            token[i++] = '\"';
+            bp += 2;
+        } else {
+            token[i++] = *bp++;
+        }
+    }
+
+    if (*bp == '\"') {
+        bp++;
+    } else {
+        error("unclosed string literal");
+    }
+
+    token[i] = '\0';
+    return make_string(token);
+}
+
 /* PRINTING */
 
 static void print(word_t x) {
@@ -905,7 +1008,7 @@ static void print(word_t x) {
     } else if (IS_SYMBOL(x)) {
         printf("%s", AS_SYMBOL(x));
     } else if (IS_PRIMITIVE(x)) {
-        printf("<primitive>");
+        printf("[Primitive]");
     } else if (IS_PAIR(x)) {
         print_list(x);
     } else if (IS_VECTOR(x)) {
@@ -914,16 +1017,17 @@ static void print(word_t x) {
         printf("\"%s\"", (char*)AS_STRING(x));
     } else if (IS_CLOSURE(x)) {
         const closure_t* closure = AS_CLOSURE(x);
-        AS_BOOLEAN(closure->macro) ? printf("<macro>") : printf("<fun>");
-        printf("{ ");
+        AS_BOOLEAN(closure->macro) ? printf("[Macro]") : printf("[Fun]");
+        putchar('(');
+        printf("#:args ");
         print(closure->args);
-        printf(" :args ");
+        printf("#:body ");
         print(closure->body);
-        printf(" :body }");
+        putchar(')');
     } else if (IS_OBJECT(x)) {
-        printf("<object>{ %lld :type }", GET_TYPE(x));
+        printf("[Object](#:type %lld)", GET_TYPE(x));
     } else {
-        printf("<value>{ %lld :tag }", x & TAG_MASK);
+        printf("[Value](#:tag %lld)", x & TAG_MASK);
     }
 }
 
@@ -1133,10 +1237,7 @@ static word_t primitive_defun(word_t x) {
     const word_t var  = CAR(x);
     const word_t args = CADR(x);
     const word_t body = CDDR(x);
-    push_roots(3, var, &args, &body);
-
-    const word_t fun = make_closure(args, body, 0);
-    pop_roots(3);
+    const word_t fun  = make_closure(args, body, 0);
 
     bind(var, fun);
 
@@ -1144,13 +1245,10 @@ static word_t primitive_defun(word_t x) {
 }
 
 static word_t primitive_defmacro(word_t x) {
-    const word_t var  = CAR(x);
-    const word_t args = CADR(x);
-    const word_t body = CDDR(x);
-    push_roots(3, &var, &args, &body);
-
+    const word_t var   = CAR(x);
+    const word_t args  = CADR(x);
+    const word_t body  = CDDR(x);
     const word_t macro = make_closure(args, body, 1);
-    pop_roots(3);
 
     bind(var, macro);
 
@@ -1169,6 +1267,14 @@ static word_t primitive_cond(word_t x) {
     }
 
     return NIL;
+}
+
+static word_t primitive_if(word_t x) {
+    if (NOT(eval(CAR(x)))) {
+        return CADDR(x);
+    } else {
+        return CADR(x);
+    }
 }
 
 static word_t primitive_let(word_t x) {
@@ -1218,13 +1324,107 @@ static word_t primitive_list(word_t x) {
 
 static word_t primitive_length(word_t x) {
     uint64_t y = 0;
-    x          = eval(CAR(x));
+    x          = CAR(x);
 
     TAKE_CONS(x) {
         y++;
     }
 
     return MAKE_INTEGER(y);
+}
+
+static word_t primitive_append(word_t x) {
+    word_t y = NIL;
+
+    TAKE_CONS(x) {
+        y = append(y, CAR(x));
+    }
+
+    return y;
+}
+
+static word_t primitive_reverse(word_t x) {
+    return reverse(CAR(x));
+}
+
+static word_t primitive_map(word_t x) {
+    word_t fun  = CAR(x);
+    word_t ys   = NIL;
+    word_t tail = NIL;
+    x           = CADR(x);
+
+    TAKE_CONS(x) {
+        const word_t args = cons(CAR(x), NIL);
+        const word_t app  = cons(fun, args);
+        const word_t y    = eval(app);
+
+        word_t new = cons(y, NIL);
+
+        if (ys == NIL) {
+            ys   = new;
+            tail = ys;
+        } else {
+            CDR(tail) = new;
+            tail      = CDR(tail);
+        }
+    }
+
+    return ys;
+}
+
+static word_t primitive_reduce(word_t x) {
+    word_t fun = CAR(x);
+    word_t y   = CADDR(x);
+    x          = CADR(x);
+
+    TAKE_CONS(x) {
+        const word_t args = cons(y, cons(CAR(x), NIL));
+        const word_t app  = cons(fun, args);
+
+        y = cons(intern("quote"), cons(eval(app), NIL));
+    }
+
+    return CADR(y);
+}
+
+static word_t primitive_last(word_t x) {
+    x = CAR(x);
+
+    TAKE_CONS(x) {
+        if (CDR(x) == NIL) {
+            return x;
+        }
+    }
+
+    return NIL;
+}
+
+static word_t primitive_butlast(word_t x) {
+    word_t y = NIL;
+    x        = CAR(x);
+
+    TAKE_CONS(x) {
+        if (CDR(x) == NIL) {
+            break;
+        }
+
+        y = cons(CAR(x), y);
+    }
+
+    return reverse(y);
+}
+
+static word_t primitive_has(word_t x) {
+    const word_t ele = CAR(x);
+    x                = CADR(x);
+
+    TAKE_CONS(x) {
+        if (EQ(ele, CAR(x))) {
+            return MAKE_BOOLEAN(1);
+        }
+    }
+
+    return MAKE_BOOLEAN(0);
 }
 
 static word_t primitive_gensym(word_t x) {
@@ -1245,11 +1445,15 @@ static word_t primitive_println(word_t x) {
     return VOID;
 }
 
+static word_t primitive_import(word_t x) {
+    return import((char*)AS_STRING(eval(CAR(x))));
+}
+
 static const struct {
     const char* s;
     primitive_t p;
 } primitives[] = {
-    PRIM(eval, 1, 1),
+    PRIM(eval, 1, 0),
     PRIM(begin, 1, 1),
     PRIM(quote, 0, 1),
     PRIM(quasi, 0, 1),
@@ -1289,14 +1493,24 @@ static const struct {
     PRIM(defmacro, 0, 1),
     
     PRIM(cond, 1, 1),
+    PRIM(if, 1, 1),
+    
     PRIM(let, 1, 1),
     PRIMA(let*, lets, 1, 1),
 
     PRIM(list, 0, 0),
-    PRIM(length, 0, 1),
+    PRIM(length, 0, 0),
+    PRIM(append, 0, 0),
+    PRIM(reverse, 0, 0),
+    PRIM(map, 0, 0),
+    PRIM(reduce, 0, 0),
+    PRIM(last, 0, 0),
+    PRIM(butlast, 0, 0),
+    PRIMA(has?, has, 0, 0),
 
     PRIM(gensym, 0, 0),
     PRIM(println, 0, 0),
+    PRIM(import, 0, 0),
 
     {0}
 };
@@ -1393,22 +1607,7 @@ static void init_env() {
 }
 
 static void open(const char* path) {
-    FILE* file = NULL;
-    fopen_s(&file, path, "r");
-
-    if (file == NULL) {
-        panic("io error");
-    }
-
-    fseek(file, 0L, SEEK_END);
-    const long size = ftell(file);
-    rewind(file);
-
-    fread(buffer, 1, size, file);
-    fclose(file);
-    buffer[size] = '\0';
-
-    print(eval(parse()));
+    println(import(path));
 }
 
 static void init() {
@@ -1417,6 +1616,8 @@ static void init() {
     init_primitives();
 
     base = save();
+
+    import("fun/std.fun");
 
     printf("have fun!\n");
 }
