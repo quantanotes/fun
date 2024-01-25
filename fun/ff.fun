@@ -82,9 +82,8 @@ Also ripped off from Matt Might.
     (defun tbup-apply (t exp)
         (def fn   (apply-fun exp))
         (def args (apply-args exp))
-        (println 'fn: fn 'args: args)
         `(apply ,(t fn) ,@(map t args)))
 
     (defun ff (exp) (tbup cc exp))
 
-    (ff '(fun (z) (z))))
+    (ff '(fun (z y) (+))))
