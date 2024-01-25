@@ -17,12 +17,16 @@ Also ripped off from Matt Might.
     (defun freevals-fun (exp)
         (def args (fun-args exp))
         (def body (fun-body exp))
-        (difference (freevals body) (apply set args)))
+        (def fvsb (freevals body))
+        (def args (set (quote-list args)))
+        (difference fvsb args))
 
     (defun freevals-apply (exp)
-        (def fn   (apply-fun exp))
-        (def args (apply-args exp))
-        (apply union (map freevals `(,fn ,@args))))
+        (def fn    (apply-fun exp))
+        (def args  (apply-args exp))
+        (def exps  (quote-list `(,fn ,@args)))
+        (def fvs   (quote-list (map freevals exps)))
+        (apply union fvs))
 
     (defun substitute (sub exp)
         ())
@@ -39,4 +43,4 @@ Also ripped off from Matt Might.
 
     (defun ff (exp) '())
 
-    (freevals '(fun (x y) (+ x y z))))
+    (freevals '(fun (x) (+ x y))))

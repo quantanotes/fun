@@ -1,4 +1,5 @@
-#| Bytecode Compiler
+#|
+Bytecode Compiler
 
 Assumes CPS transform
 
@@ -10,7 +11,6 @@ global
 define
 apply
 cont
-
 #|
 
 (begin

@@ -1021,7 +1021,7 @@ static void print(word_t x) {
         putchar('(');
         printf("#:args ");
         print(closure->args);
-        printf("#:body ");
+        printf(" #:body ");
         print(closure->body);
         putchar(')');
     } else if (IS_OBJECT(x)) {
