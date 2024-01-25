@@ -1,8 +1,7 @@
 #|
-   Fun Flattening
+Fun Flattening
 
-   Also ripped off from Matt Might.
-
+Also ripped off from Matt Might.
 |#
 
 (begin

@@ -3,17 +3,19 @@
 Assumes CPS transform
 
 Instruction set:
+
 const
 local
 global
 define
 apply
-cont 
+cont
+
 #|
 
 (begin
     (import "fun/cps.fun")
-    (import "fun/cc.fun")
+    (import "fun/ff.fun")
 
     (defun make-ctx ()
         ())

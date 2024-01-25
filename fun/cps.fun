@@ -1,4 +1,5 @@
-|# Continuation Passing Style Transform
+|#
+Continuation Passing Style Transform
 
 Unapologetically ripped off from Matt Might.
 
