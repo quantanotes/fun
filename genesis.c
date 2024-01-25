@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TRACE 0
+
 /* DATA REPRESENTATION
  *
  * Immediate values are represented using tagged pointers. The last 4 bits
@@ -705,6 +707,10 @@ static word_t eval(word_t x) {
     push_roots(2, &x, &head);
 
 start:
+    if (TRACE) {
+        println(x);
+    }
+
     if (IS_ATOM(x)) {
         x = evatom(x);
         goto end;

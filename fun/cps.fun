@@ -38,7 +38,7 @@ cexp = (aexp aexp*)
         (def fn   (apply-fun x))
         (def args (apply-args x))
             (tk fn (fun ($fn)
-                (t*k args (fun ($args ...)  ; remove the n-ary if this doesn't work.
+                (t*k args (fun ($args ...)  ; Remove the n-ary if this doesn't work
                     `(,$fn ,@$args ,c)))))))
     
     ; exp | (aexp -> cexp) -> cexp
