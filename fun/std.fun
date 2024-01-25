@@ -1,17 +1,25 @@
 (begin
-    (defun apply (f args ...) (eval (cons f (eval (cons 'list* (quote-list args))))))
+    (defun apply (f args ...)
+        (eval (cons f (eval (cons 'list* (quote-list args))))))
+
+    (defun assoc (key alist)
+        (cond
+            ((nil? alist) false)
+            ((eq? key (caar alist)) (car alist))
+            (true (assoc key (cdr alist)))))
 
     (defun quote-list   (xs) (map (macro (x) (list 'quote x)) xs))
     (defun quote-result (f)  (fun (args ...) `(quote ,(apply f args))))
 
     (defun cddr  (x) (cdr (cdr x)))
     (defun cadr  (x) (car (cdr x)))
+    (defun caar  (x) (car (car x)))
     (defun caadr (x) (car (cadr x)))
     (defun caddr (x) (car (cddr x)))
 
-    (defun fun?   (x) (and (pair? x) (eq (car x) 'fun)))
+    (defun fun?   (x) (and (pair? x) (eq? (car x) 'fun)))
     (defun apply? (x) (pair? x))
-    (defun unary? (x) (and (pair? x) (eq (length x) 2)))
+    (defun unary? (x) (and (pair? x) (eq? (length x) 2)))
     (defun aexp?  (x) (or (atom? x) (fun? x)))
 
     (defun fun-args (x) (cadr x))

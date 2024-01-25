@@ -5,7 +5,7 @@ Also ripped off from Matt Might.
 |#
 
 (begin
-    (defun fun*?    (x) (and (pair? x) (eq (car x) 'fun*)))
+    (defun fun*?    (x) (and (pair? x) (eq? (car x) 'fun*)))
     (defun funfun*? (x) (or (fun? x) (fun*? x)))    
 
     (defun freevals (exp)
@@ -28,19 +28,42 @@ Also ripped off from Matt Might.
         (def fvs   (quote-list (map freevals exps)))
         (apply union fvs))
 
-    (defun substitute (sub exp)
-        ())
+    (defun subs (sub exp)
+        (cond
+            ((symbol? exp) (subs-symbol sub exp))
+            ((funfun*? exp) (subs-fun sub exp))
+            ((apply? exp)   (subs-apply sub exp))
+            (true exp)))
 
-    ; Closure conversion
+    (defun subs-symbol (sub exp)
+        (def pair (assoc exp sub))
+        (if pair (cdr pair) exp))
+
+    (defun subs-fun (sub exp)
+        (def args (fun-args exp))
+        (def body (fun-body exp))
+        (def sub*
+            (filter (fun (pair) (not (has? args (car pair)))) sub))
+        `(fun ,args ,(sub sub* body)))
+
+    (defun subs-apply (sub exp)
+        (def fn        (apply-fun exp))
+        (def args      (apply-args exp))
+        (def subs-args (map (fun (arg) (subs sub arg)) args))
+        `(apply ,(subs sub fn) ,@subs-args))
+
+
     (defun cc (exp)
+        (def $env  (gensym 'env))
         (def args  (fun-args exp))
         (def body  (fun-body exp))
-        (def args* (con $env args))
-        (def fa    (freevals exp))
-        (def $env  (gensym 'env))
-        
-        )
+        (def args* (cons $env args))
+        (def fvs   (freevals exp))
+        (def env   (map (fun (v) (list v v)) fvs))
+        (def sub   (map (fun (v) (list v `(env-ref ,$env ,v))) fvs))
+        (def body* (subs sub body))
+        `(make-closure (fun* ,args* ,body*) (make-env ,@env)))
 
-    (defun ff (exp) '())
+    (defun ff (f exp) '())
 
-    (freevals '(fun (x) (+ x y))))
+    )

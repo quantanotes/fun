@@ -23,11 +23,10 @@ cexp = (aexp aexp*)
             ((fun?  x) (m-fun x))))
 
     (defun m-fun (x)
-        (let
-            ((a  (fun-args x))
-             (b  (fun-body x))
-             ($k (gensym 'k)))
-             `(fun (,@a ,$k) ,(tc b $k))))
+        (def args  (fun-args x))
+        (def body  (fun-body x))
+        (def $k (gensym 'k))
+        `(fun (,@args ,$k) ,(tc body $k)))
 
     ; exp | aexp -> cexp 
     (defun tc (x c)
@@ -36,12 +35,11 @@ cexp = (aexp aexp*)
             ((apply? x) (tc-apply x c))))
 
     (defun tc-apply (x c)
-        (let
-            ((f  (apply-fun x))
-             (a  (apply-args x)))
-             (tk f (fun ($f)
-                (t*k a (fun ($a)
-                    `(,$f ,@$a ,c)))))))
+        (def fn   (apply-fun x))
+        (def args (apply-args x))
+            (tk fn (fun ($fn)
+                (t*k args (fun ($args ...)  ; remove the n-ary if this doesn't work.
+                    `(,$fn ,@$args ,c)))))))
     
     ; exp | (aexp -> cexp) -> cexp
     (defun tk (x k)
@@ -50,10 +48,9 @@ cexp = (aexp aexp*)
             ((apply? x) (tk-apply x k))))
 
     (defun tk-apply (x k)
-        (let*
-            (($r (gensym 'r))
-             (c `(fun (,$r) ,(k $r))))
-             (tc x c)))
+        (def $r (gensym 'r))
+        (def c `(fun (,$r) ,(k $r)))
+        (tc x c))
 
     ; exp* | (aexp* -> cexp) -> cexp
     (defun t*k (xs k)

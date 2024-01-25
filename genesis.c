@@ -1372,6 +1372,35 @@ static word_t primitive_map(word_t x) {
     return ys;
 }
 
+static word_t primitive_filter(word_t x) {
+    word_t fun  = CAR(x);
+    word_t ys   = NIL;
+    word_t tail = NIL;
+    x           = CADR(x);
+
+    TAKE_CONS(x) {
+        const word_t args = cons(CAR(x), NIL);
+        const word_t app  = cons(fun, args);
+        const word_t pred = NOT(eval(app));
+
+        if (!pred) {
+            continue;
+        }
+
+        word_t y = cons(CAR(x), NIL);
+
+        if (ys == NIL) {
+            ys   = y;
+            tail = ys;
+        } else {
+            CDR(tail) = y;
+            tail      = CDR(tail);
+        }
+    }
+
+    return ys;
+}
+
 static word_t primitive_reduce(word_t x) {
     word_t fun = CAR(x);
     word_t y   = CADDR(x);
@@ -1473,7 +1502,7 @@ static const struct {
     PRIMA(>=, gte, 0, 0),
     PRIMA(<=, lte, 0, 0),
 
-    PRIM(eq, 0, 0),
+    PRIMA(eq?, eq, 0, 0),
     PRIM(not, 0, 0),
     PRIM(or, 0, 1),
     PRIM(and, 0, 1),
@@ -1503,6 +1532,7 @@ static const struct {
     PRIM(append, 0, 0),
     PRIM(reverse, 0, 0),
     PRIM(map, 0, 0),
+    PRIM(filter, 0, 0),
     PRIM(reduce, 0, 0),
     PRIM(last, 0, 0),
     PRIM(butlast, 0, 0),
