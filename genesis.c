@@ -264,7 +264,7 @@ static state_t base;
 static word_t  symbols;
 static word_t  env;
 
-static char  buffer[BUFFER_SIZE];
+static char* buffer;
 static char* bp;
 
 static char token[TOKEN_SIZE];
@@ -302,6 +302,8 @@ static word_t intern(const char* data);
 
 /* List */
 
+static word_t list(int n, ...);
+static word_t quote(word_t x);
 static word_t append(word_t head, word_t tail);
 static word_t reverse(word_t list);
 
@@ -322,7 +324,7 @@ static word_t evlis(word_t x);
 static word_t evargs(word_t x, word_t args);
 static word_t evatom(word_t x);
 static word_t evsym(word_t x);
-static word_t quasi(word_t x);
+static word_t evquasi(word_t x);
 static word_t begin(word_t x);
 
 /* Parsing */
@@ -589,6 +591,35 @@ static word_t intern(const char* data) {
 
 /* LIST */
 
+
+static word_t list(int n, ...) {
+    va_list args;
+    va_start(args, n);
+
+    word_t list = NIL;
+    word_t tail = NIL;
+
+    for (int i = 0; i < n; i++) {
+        word_t new = cons(va_arg(args, word_t), NIL);
+
+        if (list == NIL) {
+            list   = new;
+            tail = list;
+        } else {
+            CDR(tail) = new;
+            tail      = CDR(tail);
+        }
+    }
+
+    va_end(args);
+
+    return list;
+}
+
+static word_t quote(word_t x) {
+    return cons(intern("quote"), cons(x, NIL));
+}
+
 static word_t append(word_t head, word_t tail) {
     if (head == NIL) {
         return tail;
@@ -680,6 +711,9 @@ static void bind_args(word_t argvar, word_t argval) {
 }
 
 static word_t import(const char* path) {
+    char* old_buffer = buffer;
+    buffer           = malloc(BUFFER_SIZE);
+
     FILE* file = NULL;
     fopen_s(&file, path, "r");
 
@@ -691,11 +725,20 @@ static word_t import(const char* path) {
     const long size = ftell(file);
     rewind(file);
 
+    if (size > BUFFER_SIZE) {
+        panic("buffer overflow");
+    }
+
     fread(buffer, 1, size, file);
     fclose(file);
     buffer[size] = '\0';
 
-    return eval(parse());
+    const word_t result = eval(parse());
+
+    free(buffer);
+    buffer = old_buffer;
+
+    return result;
 }
 
 /* EVALUATION */
@@ -829,18 +872,18 @@ static word_t evsym(word_t x) {
     return val;
 }
 
-static word_t quasi(word_t x) {
+static word_t evquasi(word_t x) {
     if (IS_ATOM(x)) {
         return x;
     }
 
     if (IS_PAIR(CAR(x)) && CAAR(x) == intern("splicing")) {
-        return append(CADAR(x), quasi(CDR(x)));
+        return append(CADAR(x), evquasi(CDR(x)));
     }
 
     if (IS_PAIR(CAR(x)) && CAAR(x) == intern("unquote")) {
         if (IS_PAIR(CADAR(x)) && CAADAR(x) == intern("splicing")) {
-            return append(eval(CADADAR(x)), quasi(CDR(x)));
+            return append(eval(CADADAR(x)), evquasi(CDR(x)));
         }
     }
 
@@ -849,10 +892,10 @@ static word_t quasi(word_t x) {
     }
 
     if (CAR(x) == intern("quasi")) {
-        return quasi(CDR(x));
+        return evquasi(CDR(x));
     }
 
-    return cons(quasi(CAR(x)), quasi(CDR(x)));
+    return cons(evquasi(CAR(x)), evquasi(CDR(x)));
 }
 
 static word_t begin(word_t x) {
@@ -1096,7 +1139,7 @@ static word_t primitive_quote(word_t x) {
 }
 
 static word_t primitive_quasi(word_t x) {
-    return quasi(CAR(x));
+    return evquasi(CAR(x));
 }
 
 static word_t primitive_unquote(word_t x) {
@@ -1360,7 +1403,7 @@ static word_t primitive_map(word_t x) {
     x           = CADR(x);
 
     TAKE_CONS(x) {
-        const word_t args = cons(CAR(x), NIL);
+        const word_t args = list(1, quote(CAR(x)));
         const word_t app  = cons(fun, args);
         const word_t y    = eval(app);
 
@@ -1385,11 +1428,11 @@ static word_t primitive_filter(word_t x) {
     x           = CADR(x);
 
     TAKE_CONS(x) {
-        const word_t args = cons(CAR(x), NIL);
+        const word_t args = list(1, quote(CAR(x)));
         const word_t app  = cons(fun, args);
         const word_t pred = NOT(eval(app));
 
-        if (!pred) {
+        if (pred) {
             continue;
         }
 
@@ -1413,10 +1456,10 @@ static word_t primitive_reduce(word_t x) {
     x          = CADR(x);
 
     TAKE_CONS(x) {
-        const word_t args = cons(y, cons(CAR(x), NIL));
+        const word_t args = list(2, y, quote(CAR(x)));
         const word_t app  = cons(fun, args);
 
-        y = cons(intern("quote"), cons(eval(app), NIL));
+        y = quote(eval(app));
     }
 
     return CADR(y);
@@ -1659,6 +1702,8 @@ static void init() {
 }
 
 static void repl() {
+    buffer = malloc(BUFFER_SIZE);
+
     while (1) {
         printf("> ");
         fgets(buffer, BUFFER_SIZE, stdin);

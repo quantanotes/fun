@@ -8,7 +8,7 @@
             ((eq? key (caar alist)) (car alist))
             (true (assoc key (cdr alist)))))
 
-    (defun quote-list   (xs) (map (macro (x) (list 'quote x)) xs))
+    (defun quote-list   (xs) (map (fun (x) (list 'quote x)) xs))
     (defun quote-result (f)  (fun (args ...) `(quote ,(apply f args))))
 
     (defun cddr  (x) (cdr (cdr x)))
@@ -45,7 +45,7 @@
     (defun intersect (xs ...)
         (eval (reduce
             (quote-result _intersect)
-            (quote-list (cdr xs))
+            (cdr xs)
             '(car xs))))
 
     (defun difference (a b)

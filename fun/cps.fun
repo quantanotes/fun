@@ -1,4 +1,4 @@
-|#
+#|
 Continuation Passing Style Transform
 
 Unapologetically ripped off from Matt Might.
@@ -23,9 +23,9 @@ cexp = (aexp aexp*)
             ((fun?  x) (m-fun x))))
 
     (defun m-fun (x)
-        (def args  (fun-args x))
-        (def body  (fun-body x))
-        (def $k (gensym 'k))
+        (def args (fun-args x))
+        (def body (fun-body x))
+        (def $k   (gensym 'k))
         `(fun (,@args ,$k) ,(tc body $k)))
 
     ; exp | aexp -> cexp 
@@ -39,7 +39,7 @@ cexp = (aexp aexp*)
         (def args (apply-args x))
             (tk fn (fun ($fn)
                 (t*k args (fun ($args ...)  ; Remove the n-ary if this doesn't work
-                    `(,$fn ,@$args ,c)))))))
+                    `(,$fn ,@$args ,c))))))
     
     ; exp | (aexp -> cexp) -> cexp
     (defun tk (x k)
@@ -49,7 +49,7 @@ cexp = (aexp aexp*)
 
     (defun tk-apply (x k)
         (def $r (gensym 'r))
-        (def c `(fun (,$r) ,(k $r)))
+        (def c  `(fun (,$r) ,(k $r)))
         (tc x c))
 
     ; exp* | (aexp* -> cexp) -> cexp

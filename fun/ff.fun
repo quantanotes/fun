@@ -24,7 +24,7 @@ Also ripped off from Matt Might.
     (defun freevals-apply (exp)
         (def fn   (apply-fun exp))
         (def args (apply-args exp))
-        (def exps (quote-list `(,fn ,@args)))
+        (def exps `(,fn ,@args))
         (def fvs  (quote-list (map freevals exps)))
         (apply union fvs))
 
@@ -54,16 +54,20 @@ Also ripped off from Matt Might.
 
     ; Closure conversion
     (defun cc (exp)
-        (cond ((fun? exp)
-            (def $env  (gensym 'env))
-            (def args  (fun-args exp))
-            (def body  (fun-body exp))
-            (def args* (cons $env args))
-            (def fvs   (freevals exp))
-            (def env   (map (fun (v) (list v v)) fvs))
-            (def sub   (map (fun (v) (list v `(env-ref ,$env ,v))) fvs))
-            (def body* (subs sub body))
-            `(make-closure (fun* ,args* ,body*) (make-env ,@env)))))
+        (cond
+            ((fun? exp) (cc-fun exp))
+            (true exp)))
+
+    (defun cc-fun (exp)
+        (def $env  (gensym 'env))
+        (def args  (fun-args exp))
+        (def body  (fun-body exp))
+        (def args* (cons $env args))
+        (def fvs   (freevals exp))
+        (def env   (map (fun (v) (list v v)) fvs))
+        (def sub   (map (fun (v) (list v `(env-ref ,$env ,v))) fvs))
+        (def body* (subs sub body))
+        `(make-closure (fun* ,args* ,body*) (make-env ,@env)))
 
     ; Transform bottom up
     (defun tbup (f exp)
@@ -82,8 +86,6 @@ Also ripped off from Matt Might.
     (defun tbup-apply (t exp)
         (def fn   (apply-fun exp))
         (def args (apply-args exp))
-        `(apply ,(t fn) ,@(map t args)))
+        `(,(t fn) ,@(map t (quote-list args))))
 
-    (defun ff (exp) (tbup cc exp))
-
-    (ff '(fun (z y) (+))))
+    (defun ff (exp) (tbup cc exp)))
