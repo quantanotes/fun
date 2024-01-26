@@ -22,7 +22,7 @@ cexp = (aexp aexp*)
             ((atom? exp) exp)
             ((fun?  exp) (m-fun exp))))
 
-    (defun m-fun (x)
+    (defun m-fun (exp)
         (def args (fun-args exp))
         (def body (fun-body exp))
         (def $k   (gensym 'k))

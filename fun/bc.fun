@@ -21,4 +21,4 @@ callcc
 
     (def exp '(fun (x) (fun (y) (z x y))))
 
-    (transform exp))
+    (cps exp))
