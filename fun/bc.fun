@@ -10,11 +10,15 @@ local
 global
 define
 apply
-cont
+callcc
 |#
 
 (begin
     (import "fun/cps.fun")
     (import "fun/ff.fun")
 
-    (cc '(fun (a) (a b c))))
+    (defun transform (x) (ff (cps x)))
+
+    (def exp '(fun (x) (fun (y) (z x y))))
+
+    (transform exp))

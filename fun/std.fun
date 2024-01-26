@@ -17,10 +17,11 @@
     (defun caadr (x) (car (cadr x)))
     (defun caddr (x) (car (cddr x)))
 
-    (defun fun?   (x) (and (pair? x) (eq? (car x) 'fun)))
-    (defun apply? (x) (pair? x))
-    (defun unary? (x) (and (pair? x) (eq? (length x) 2)))
-    (defun aexp?  (x) (or (atom? x) (fun? x)))
+    (defun apply-of? (f x) (and (pair? x) (eq? (car x) f)))
+    (defun fun?      (x)   (apply-of? 'fun x))
+    (defun apply?    (x)   (pair? x))
+    (defun unary?    (x)   (and (pair? x) (eq? (length x) 2)))
+    (defun aexp?     (x)   (or (atom? x) (fun? x)))
 
     (defun fun-args (x) (cadr x))
     (defun fun-body (x) (caddr x))

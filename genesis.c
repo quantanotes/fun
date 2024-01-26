@@ -134,7 +134,7 @@ typedef uint64_t word_t;
 #define ROOTS_SIZE    4096
 #define SYMBOLS_SIZE  4096
 #define BINDINGS_SIZE 256
-#define BUFFER_SIZE   4096
+#define BUFFER_SIZE   32768
 #define TOKEN_SIZE    512
 
 #define IS_ATOM(x) !IS_PAIR(x)
@@ -472,6 +472,7 @@ static inline int in_stack(word_t x) {
 
 static inline void swap_heaps() {
     word_t* tmp = fromspace;
+
     fromspace   = tospace;
     tospace     = tmp;
     hp          = fromspace;
@@ -494,7 +495,7 @@ static object_t* new(word_t type, word_t size) {
 static word_t cons(word_t car, word_t cdr) {
     push_roots(2, &car, &cdr);
 
-    object_t* obj  = new (PAIR_TYPE, PAIR_SIZE);
+    object_t* obj  = new(PAIR_TYPE, PAIR_SIZE);
     pair_t*   pair = (pair_t*)obj->data;
 
     pair->car = car;
@@ -505,7 +506,7 @@ static word_t cons(word_t car, word_t cdr) {
 }
 
 static word_t make_vector(size_t size, const word_t* data) {
-    object_t* obj    = new (VECTOR_TYPE, size);
+    object_t* obj    = new(VECTOR_TYPE, size);
     vector_t* vector = (vector_t*)obj->data;
 
     if (data != NULL) {
@@ -520,7 +521,7 @@ static word_t make_vector(size_t size, const word_t* data) {
 static word_t make_string(const char* data) {
     const size_t size = strlen(data) + 1;
 
-    object_t* obj = new (STRING_TYPE, BYTE_TO_WORD(size));
+    object_t* obj = new(STRING_TYPE, BYTE_TO_WORD(size));
 
     strcpy_s((char*)obj->data, size, data);
 
@@ -530,7 +531,7 @@ static word_t make_string(const char* data) {
 static word_t make_env(word_t parent) {
     push_root(&parent);
 
-    object_t* obj = new (ENV_TYPE, ENV_SIZE);
+    object_t* obj = new(ENV_TYPE, ENV_SIZE);
     env_t*    env = (env_t*)obj->data;
     word_t    ref = MAKE_OBJECT(obj);
 
@@ -1739,8 +1740,10 @@ int genesis_entry(const char* path) {
 static void log_error(const char* format, ...) {
     va_list args = NULL;
     va_start(args, format);
+    
     vfprintf(stderr, format, args);
     putchar('\n');
+
     va_end(args);
 }
 

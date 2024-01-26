@@ -17,50 +17,50 @@ cexp = (aexp aexp*)
 
 (begin
     ; exp -> aexp
-    (defun m (x)
+    (defun m (exp)
         (cond
-            ((atom? x) x)
-            ((fun?  x) (m-fun x))))
+            ((atom? exp) exp)
+            ((fun?  exp) (m-fun exp))))
 
     (defun m-fun (x)
-        (def args (fun-args x))
-        (def body (fun-body x))
+        (def args (fun-args exp))
+        (def body (fun-body exp))
         (def $k   (gensym 'k))
         `(fun (,@args ,$k) ,(tc body $k)))
 
     ; exp | aexp -> cexp 
-    (defun tc (x c)
+    (defun tc (exp c)
         (cond
-            ((aexp?  x) `(,c ,(m x)))
-            ((apply? x) (tc-apply x c))))
+            ((aexp?  exp) `(,c ,(m exp)))
+            ((apply? exp) (tc-apply exp c))))
 
-    (defun tc-apply (x c)
-        (def fn   (apply-fun x))
-        (def args (apply-args x))
-            (tk fn (fun ($fn)
-                (t*k args (fun ($args ...)  ; Remove the n-ary if this doesn't work
-                    `(,$fn ,@$args ,c))))))
+    (defun tc-apply (exp c)
+        (def fn   (apply-fun exp))
+        (def args (apply-args exp))
+        (tk fn (fun ($fn)
+            (t*k args (fun ($args)
+                `(,$fn ,@$args ,c))))))
     
     ; exp | (aexp -> cexp) -> cexp
-    (defun tk (x k)
+    (defun tk (exp k)
         (cond
-            ((aexp?  x) (k (m x)))
-            ((apply? x) (tk-apply x k))))
+            ((aexp?  exp) (k (m exp)))
+            ((apply? exp) (tk-apply exp k))))
 
-    (defun tk-apply (x k)
+    (defun tk-apply (exp k)
         (def $r (gensym 'r))
-        (def c  `(fun (,$r) ,(k $r)))
-        (tc x c))
+        (def c `(fun (,$r) ,(k $r)))
+        (tc exp c))
 
     ; exp* | (aexp* -> cexp) -> cexp
-    (defun t*k (xs k)
+    (defun t*k (exp* k)
         (cond
-            ((nil? xs) (k nil))
-            ((pair? xs) (tk (car xs) (fun (head)
-                (t*k (cdr xs) (fun (tail)
+            ((nil? exp*) (k nil))
+            ((pair? exp*) (tk (car exp*) (fun (head)
+                (t*k (cdr exp*) (fun (tail)
                     (k (cons head tail)))))))))
 
-    (defun cps (x)
+    (defun cps (exp)
         (cond
-            ((aexp? x)  (m x))
-            ((apply? x) (tc x 'halt)))))
+            ((aexp? exp)  (m exp))
+            ((apply? exp) (tc exp 'halt)))))
