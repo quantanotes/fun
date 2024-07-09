@@ -1,0 +1,4 @@
+AlignAfterOpenBracket: BlockIndent
+AllowShortFunctionsOnASingleLine: None
+ContinuationIndentWidth: 2
+PointerAlignment: Left
