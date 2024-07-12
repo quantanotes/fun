@@ -165,8 +165,8 @@
 
     [(app ,fun ,arg* ...)    
      (Kont fun (lambda (fun0)
-      (Kont* arg* (lambda (arg*0)
-     `(app ,fun0 ,arg*0 ... ,c)))))]
+     (Kont* arg* (lambda (arg*0)
+    `(app ,fun0 ,arg*0 ... ,c)))))]
      
     [else `(app ,c ,(Atomic exp))])
         
@@ -272,7 +272,9 @@
   (Exp (exp var val body)
     (- (fix ([var* val*] ...) body)
        (lam (var* ...) body)
-       (clos (var0* ...) (var1* ...) body))))
+       (clos (var0* ...) (var1* ...) body))
+       
+    (+ (make-clos (var* ...) var))))
 
 (define-pass lift-top-level : L1 (exp) -> L2 ()
   (definitions
@@ -303,10 +305,12 @@
       (values $lam env1))]
 
     [(clos (,var0* ...) (,var1* ...) ,body)
-     (let*-values ((($clos) (gensym 'clos))
-                   ((exp0 env0) (Exp exp env))
+     (let*-values ((($clos) (gensym 'lam))
+                   ((exp0 env0) (Top exp env))
                    ((env1) (extend env0 $clos exp0)))
-      (values $clos env1))]
+      (nanopass-case (L2 Top) exp0
+        [(clos (,var0* ...) (,var1* ...) ,body)
+         (values `(make-clos (,var0* ...) ,$clos) env1)]))]
 
     [(if ,exp0 ,exp1 ,exp2)
      (let*-values (((exp* env0) (Exp* (list exp0 exp1 exp2) env)))
@@ -327,7 +331,6 @@
     [(app ,fun ,arg* ...)
      (let*-values (((fun0 env0) (Exp fun env))
                    ((arg*0 env1) (Exp* arg* env0)))
-    (newline)
       (values `(app ,fun0 ,arg*0 ...) env1))]
     
     [else (values `,exp env)])
@@ -368,8 +371,11 @@
 
     (define (~clos-ref var) (string-append "env." (~var var)))
 
+    (define (~make-clos var* var)
+      (string-append "fun_mk_clos(" var ", " (~list var*) ")"))
+
     (define (~if exp0 exp1 exp2)
-      (string-append "(" exp0 ")\n? (" exp1 ")\n: (" exp2 ")"))
+      (string-append "(" "fun_as_bool(" exp0 ") ? (" exp1 ") : (" exp2 "))"))
 
     (define prims
       '((+ . "fun_prim_add")
@@ -383,7 +389,7 @@
       (string-append macro "(" (first arg*) ", " (second arg*) ", " (third arg*) ")"))
 
     (define (~app fun arg*)
-      (string-append "(" fun ")" "(" (~list arg*) ")"))
+      (string-append "fun_as_proc(" fun ")" "(" (~list arg*) ")"))
 
     (define (~top top)
       (apply string-append top))
@@ -403,6 +409,9 @@
     
     [(label ,var) (~var var)]
     
+    [(make-clos (,var* ...) ,var)
+     (~make-clos (map Exp var*) (Exp var))]
+
     [(if ,exp0 ,exp1 ,exp2)
      (~if (Exp exp0) (Exp exp1) (Exp exp2))]
     
@@ -420,24 +429,24 @@
      (string-append "static const fun_any_t " (Exp name) " = " (Exp exp) ";\n")]
     
     [(lam (,var* ...) ,body)
-     (define func-name (~var name))
-     (define params (string-join (map (lambda (v) (string-append "fun_any_t " (~var v))) var*) ", "))
-     (define body-code (Exp body))
-     (string-append "void " func-name "(" params ") {\n" body-code ";\n}\n")]
+     (define var*0 (string-join (map (lambda (v) (string-append "fun_any_t " (Exp v))) var*) ", "))
+     (define body0 (Exp body))
+     (string-append "void " name "_proc(" var*0 ") {\n" body0 ";\n}\n"
+                    "static const fun_any_t " name " = fun_mk_proc(" name "_proc)\n")]
     
     [(clos (,var0* ...) (,var1* ...) ,body)
-     (define struct-name (string-append (~var name) "_t"))
-     (define struct-fields (string-join (map (lambda (v) (string-append "fun_any_t " (~var v) ";")) var0*) "\n"))
-     (define func-name (~var name))
-     (define params (string-join (cons (string-append struct-name " env") (map ~var var1*)) ", fun_any_t "))
-     (define body-code (Exp body))
-     (string-append "typedef struct {\n" struct-fields "\n} " struct-name ";\n"
-                    "void " func-name "(" params ") {\n" body-code ";\n}\n")])
+     (define var0*0 (string-join (map (lambda (v) (string-append "fun_any_t " (Exp v) ";")) var0*) "\n"))
+     (define var1*0 (string-join (cons (string-append name "_env env") (map Exp var1*)) ", fun_any_t "))
+     (define body0 (Exp body))
+     (string-append "typedef struct {\n" var0*0 "\n} " name "_env;\n"
+                    "void " name "_proc(" var1*0 ") {\n" body0 ";\n}\n")
+                    "static const fun_any_t " name " = fun_mk_proc(" name "_proc)\n"])
 
   (Prog : Prog (prog) -> * ()
     [(fix ([,var* ,top*] ...) ,body)
-     (let ((top0 (~top (map Top top* var*)))
-           (main (~main (Exp body))))
+     (let* ([var*0 (map Exp var*)]
+            [top0 (~top (map Top top* var*0))]
+            [main (~main (Exp body))])
        (string-append "#include \"runtime.h\"\n" top0 main))])
     
   (Prog prog))

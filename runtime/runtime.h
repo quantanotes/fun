@@ -5,9 +5,11 @@
 #include "prim.h"
 #include "print.h"
 
-static void halt(fun_any_t x) {
+static void _halt(fun_any_t x) {
   fun_print(x);
   exit(0);
 }
+
+static fun_any_t halt = fun_mk_proc((fun_proc_t)_halt);
 
 #endif // FUN_RUNTIME_H

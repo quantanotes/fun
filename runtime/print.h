@@ -9,6 +9,12 @@ static void fun_print(fun_any_t x) {
   case FUN_TAG_PTR:
     printf("ptr<%p>", fun_as_obj(x));
     break;
+  case FUN_TAG_BOOL:
+    if (fun_as_bool(x))
+      printf("bool<#t>");
+    else
+      printf("bool<#f>");
+    break;
   case FUN_TAG_INT:
     printf("int<%d>", fun_as_int(x));
     break;
